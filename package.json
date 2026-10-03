@@ -1,0 +1,69 @@
+{
+  "name": "richie-custom-contracts",
+  "version": "1.0.0",
+  "description": "custom contracts for  richie finance project",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "clean": "rm -fr ./artifacts ./cache  ./coverage ./typechain-types",
+    "verify:sourcify": "node scripts/verify-sourcify.mjs",
+    "tomb:deploy:foundation": "hardhat run scripts/tomb/deploy-foundation.ts",
+    "tomb:deploy:oracle": "hardhat run scripts/tomb/deploy-oracle.ts",
+    "tomb:deploy:core": "hardhat run scripts/tomb/deploy-core.ts",
+    "tomb:add:pools": "hardhat run scripts/tomb/add-genesis-pools.ts",
+    "tomb:configure": "hardhat run scripts/tomb/configure-system.ts",
+    "tomb:deploy:farm": "hardhat run scripts/tomb/deploy-farm.ts",
+    "tomb:deploy:share-oracle": "hardhat run scripts/tomb/deploy-share-oracle.ts",
+    "tomb:deploy:redeem": "hardhat run scripts/tomb/deploy-redeem.ts",
+    "tomb:deploy:rebates": "hardhat run scripts/tomb/deploy-rebates.ts",
+    "tomb:deploy:rebate-oracle": "hardhat run scripts/tomb/deploy-rebate-oracle.ts",
+    "tomb:deploy:rebate-pls-oracle": "hardhat run scripts/tomb/deploy-rebate-pls-oracle.ts",
+    "tomb:deploy:zap": "hardhat run scripts/tomb/deploy-zap.ts",
+    "tomb:configure:farm": "hardhat run scripts/tomb/configure-farm.ts",
+    "tomb:configure:redeem": "hardhat run scripts/tomb/configure-redeem.ts",
+    "tomb:configure:rebates": "hardhat run scripts/tomb/configure-rebates.ts",
+    "tomb:update:oracles": "hardhat run scripts/tomb/update-oracles.ts",
+    "tomb:transfer:admin": "hardhat run scripts/tomb/transfer-administration.ts",
+    "tomb:check:scripts": "tsc --project scripts/tomb/tsconfig.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/grape-finance/"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/grape-finance"
+  },
+  "homepage": "https://richie.finance",
+  "type": "module",
+  "dependencies": {
+    "@aave/core-v3": "1.19.3",
+    "@openzeppelin/contracts": "5.4.0",
+    "@uniswap/v2-core": "1.0.1",
+    "@uniswap/v2-periphery": "1.1.0-beta.0",
+    "dotenv": "^17.2.2"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "4.0.1",
+    "@nomicfoundation/hardhat-ethers-chai-matchers": "3.0.0",
+    "@nomicfoundation/hardhat-ignition": "3.0.1",
+    "@nomicfoundation/hardhat-ignition-ethers": "3.0.1",
+    "@nomicfoundation/hardhat-keystore": "3.0.1",
+    "@nomicfoundation/hardhat-mocha": "3.0.1",
+    "@nomicfoundation/hardhat-network-helpers": "^3.0.0",
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "3.0.0",
+    "@nomicfoundation/hardhat-typechain": "3.0.0",
+    "@nomicfoundation/hardhat-verify": "^3.0.2",
+    "@types/chai": "4.3.20",
+    "@types/chai-as-promised": "8.0.2",
+    "@types/mocha": "10.0.10",
+    "@types/node": "22.18.0",
+    "chai": "5.3.3",
+    "ethers": "6.15.0",
+    "forge-std": "github:foundry-rs/forge-std#v1.9.4",
+    "hardhat": "^3.0.6",
+    "mocha": "11.7.1",
+    "typescript": "5.8.3"
+  }
+}

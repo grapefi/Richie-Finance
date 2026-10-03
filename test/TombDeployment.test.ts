@@ -1,0 +1,133 @@
+import { expect } from "chai";
+import { network } from "hardhat";
+import { main as deployFarm } from "../scripts/tomb/deploy-farm.js";
+import { main as deployOracle } from "../scripts/tomb/deploy-share-oracle.js";
+import { main as deployRebateOracle } from "../scripts/tomb/deploy-rebate-oracle.js";
+import { main as deployPlsOracle } from "../scripts/tomb/deploy-rebate-pls-oracle.js";
+import { main as deployRedeem } from "../scripts/tomb/deploy-redeem.js";
+import { main as deployRebates } from "../scripts/tomb/deploy-rebates.js";
+import { main as deployZap } from "../scripts/tomb/deploy-zap.js";
+import { main as genesisPools } from "../scripts/tomb/add-genesis-pools.js";
+import { main as configureFarm } from "../scripts/tomb/configure-farm.js";
+import { main as configureSystem } from "../scripts/tomb/configure-system.js";
+import { main as configureRedeem } from "../scripts/tomb/configure-redeem.js";
+import { main as configureRebates } from "../scripts/tomb/configure-rebates.js";
+import { main as updateOracles } from "../scripts/tomb/update-oracles.js";
+import { main as transferAdmin } from "../scripts/tomb/transfer-administration.js";
+
+const { ethers, networkHelpers } = await network.connect();
+
+describe("Tomb deployment and configuration scripts", () => {
+  it("deploys remaining contracts, configures and funds once, primes PSM, and transfers administration", async () => {
+    const saved = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith("TOMB_")));
+    for (const key of Object.keys(saved)) delete process.env[key];
+    try {
+      const [signer, admin] = await ethers.getSigners();
+      const ctx = { ethers, signer };
+      const start = BigInt((await ethers.provider.getBlock("latest"))!.timestamp) + 86400n;
+      process.env.TOMB_START_TIME = String(start);
+      const peg = await ethers.deployContract("contracts/tomb/Peg.sol:Peg");
+      const share = await ethers.deployContract("contracts/tomb/Share.sol:Share", [start, signer.address, signer.address]);
+      const genesis = await ethers.deployContract("GenesisRewardPool", [await peg.getAddress(), start]);
+      const treasury = await ethers.deployContract("Treasury");
+      const boardroom = await ethers.deployContract("Boardroom");
+      const token = await ethers.deployContract("TombScriptToken");
+      Object.assign(process.env, {
+        TOMB_PEG_ADDRESS: await peg.getAddress(), TOMB_SHARE_ADDRESS: await share.getAddress(),
+        TOMB_GENESIS_ADDRESS: await genesis.getAddress(), TOMB_TREASURY_ADDRESS: await treasury.getAddress(),
+        TOMB_BOARDROOM_ADDRESS: await boardroom.getAddress(),
+      });
+      const pair = await ethers.deployContract("TombScriptPair", [await share.getAddress(), "0xA1077a294dDE1B09bB078844df40758a5D0f9a27"]);
+      process.env.TOMB_SHARE_PAIR_ADDRESS = await pair.getAddress();
+      process.env.TOMB_SHARE_ORACLE_START_TIME = String(start - 86400n);
+      const oracle = await deployOracle(ctx);
+      process.env.TOMB_SHARE_ORACLE_ADDRESS = await oracle.getAddress();
+      const usdcAddress = "0x15D38573d2feeb82e7ad5187aB8c1D52810B1f07";
+      const usdc = await ethers.deployContract("TombScriptUSDC");
+      await ethers.provider.send("hardhat_setCode", [usdcAddress, await ethers.provider.getCode(await usdc.getAddress())]);
+      const rebatePair = await ethers.deployContract("TombScriptPair", [await share.getAddress(), usdcAddress]);
+      await rebatePair.setReserves(ethers.parseEther("1"), 2000000n);
+      process.env.TOMB_REBATE_SHARE_PAIR_ADDRESS = await rebatePair.getAddress();
+      process.env.TOMB_REBATE_ORACLE_START_TIME = String(start - 86400n);
+      const rebateOracle = await deployRebateOracle(ctx);
+      process.env.TOMB_REBATE_SHARE_ORACLE_ADDRESS = await rebateOracle.getAddress();
+      const wplsAddress = "0xA1077a294dDE1B09bB078844df40758a5D0f9a27";
+      await ethers.provider.send("hardhat_setCode", [wplsAddress, await ethers.provider.getCode(await token.getAddress())]);
+      const plsPair = await ethers.deployContract("TombScriptPair", [wplsAddress, usdcAddress]);
+      await plsPair.setReserves(ethers.parseEther("1"), 100n);
+      process.env.TOMB_REBATE_PLS_PAIR_ADDRESS = await plsPair.getAddress();
+      process.env.TOMB_REBATE_PLS_ORACLE_START_TIME = String(start - 86400n);
+      const plsOracle = await deployPlsOracle(ctx);
+      process.env.TOMB_REBATE_PLS_ORACLE_ADDRESS = await plsOracle.getAddress();
+      process.env.TOMB_REBATE_PLS_ENABLED = "true";
+      // The test only exercises wiring; Treasury pricing needs its own PEG oracle in production.
+      await treasury.initialize(await peg.getAddress(), await share.getAddress(), await oracle.getAddress(), await boardroom.getAddress(), start);
+      await boardroom.initialize(await peg.getAddress(), await share.getAddress(), await treasury.getAddress());
+      const farm = await deployFarm(ctx);
+      process.env.TOMB_FARM_ADDRESS = await farm.getAddress();
+      const pools = JSON.stringify([{ token: await token.getAddress(), allocPoint: "100", depositFeeBps: 100 }]);
+      process.env.TOMB_GENESIS_POOLS = pools;
+      process.env.TOMB_FARM_POOLS = pools;
+      process.env.TOMB_GENESIS_POOLS = JSON.stringify([{ token: await token.getAddress(), allocPoint: "100", lastRewardTime: String(start + 1n) }]);
+      await expect(genesisPools(ctx)).to.be.rejectedWith("lastRewardTime=0");
+      process.env.TOMB_GENESIS_POOLS = pools;
+      await genesisPools(ctx);
+      await genesisPools(ctx);
+      expect((await genesis.poolInfo(0)).depositFeeBps).to.equal(100n);
+      await expect(genesis.poolInfo(1)).to.revert(ethers);
+      await configureFarm(ctx);
+      await configureFarm(ctx);
+      expect(await farm.poolLength()).to.equal(1n);
+      await configureSystem(ctx);
+      await configureSystem(ctx);
+      expect(await peg.balanceOf(await genesis.getAddress())).to.equal(ethers.parseEther("2400"));
+      expect(await share.balanceOf(await farm.getAddress())).to.equal(ethers.parseEther("41000"));
+      expect(await peg.operator()).to.equal(await treasury.getAddress());
+      expect(await boardroom.operator()).to.equal(await treasury.getAddress());
+      await networkHelpers.time.increase(3601);
+      await updateOracles(ctx);
+      process.env.TOMB_PSM_ENABLED = "true";
+      await configureFarm(ctx);
+      expect(await farm.pegStabilityModuleFeeEnabled()).to.equal(true);
+      process.env.TOMB_PDAI_ADDRESS = await token.getAddress();
+      const redeem = await deployRedeem(ctx);
+      process.env.TOMB_REDEEM_ADDRESS = await redeem.getAddress();
+      process.env.TOMB_REDEEM_PDAI_RESERVE_WEI = "1000";
+      await token.mint(signer.address, 1000);
+      await configureRedeem(ctx);
+      await configureRedeem(ctx);
+      expect(await token.balanceOf(await redeem.getAddress())).to.equal(1000n);
+      const rebates = await deployRebates(ctx);
+      process.env.TOMB_REBATES_ADDRESS = await rebates.getAddress();
+      process.env.TOMB_REBATE_ASSETS = JSON.stringify([{ token: await token.getAddress(), multiplier: "1000000", oracle: await oracle.getAddress(), isLP: true }]);
+      await expect(configureRebates(ctx)).to.be.rejectedWith("use direct USDC");
+      process.env.TOMB_REBATE_ASSETS = JSON.stringify([{ token: usdcAddress, multiplier: "1000000" }]);
+      process.env.TOMB_REBATE_SHARE_RESERVE_WEI = "1000";
+      await configureRebates(ctx);
+      await configureRebates(ctx);
+      expect(await share.balanceOf(await rebates.getAddress())).to.equal(1000n);
+      expect((await rebates.assets(wplsAddress)).isAdded).to.equal(true);
+      const router = await ethers.deployContract("TombScriptRouter");
+      await ethers.provider.send("hardhat_setCode", ["0x165C3410fC91EF562C50559f7d2289fEbed552d9", await ethers.provider.getCode(await router.getAddress())]);
+      const pegPair = await ethers.deployContract("TombScriptPair", [await peg.getAddress(), "0x6B175474E89094C44Da98b954EedeAC495271d0F"]);
+      process.env.TOMB_PEG_PDAI_PAIR_ADDRESS = await pegPair.getAddress();
+      const zap = await deployZap(ctx);
+      process.env.TOMB_ZAP_ADDRESS = await zap.getAddress();
+      process.env.TOMB_ADMIN_ADDRESS = admin.address;
+      await transferAdmin(ctx);
+      await transferAdmin(ctx);
+      expect(await treasury.operator()).to.equal(admin.address);
+      expect(await farm.operator()).to.equal(admin.address);
+      expect(await share.owner()).to.equal(admin.address);
+      expect(await share.operator()).to.equal(await treasury.getAddress());
+      expect(await oracle.owner()).to.equal(admin.address);
+      expect(await rebateOracle.owner()).to.equal(admin.address);
+      expect(await plsOracle.owner()).to.equal(admin.address);
+      expect(await redeem.owner()).to.equal(admin.address);
+      expect(await zap.owner()).to.equal(admin.address);
+    } finally {
+      for (const key of Object.keys(process.env)) if (key.startsWith("TOMB_")) delete process.env[key];
+      Object.assign(process.env, saved);
+    }
+  });
+});
