@@ -23,6 +23,7 @@ export async function main(ctx?: Context) {
     ["redeem", "TOMB_REDEEM_ADDRESS", "owner", "transferOwnership"],
     ["rebates", "TOMB_REBATES_ADDRESS", "owner", "transferOwnership"],
     ["zap", "TOMB_ZAP_ADDRESS", "owner", "transferOwnership"],
+    ["shareZap", "TOMB_SHARE_ZAP_ADDRESS", "owner", "transferOwnership"],
   ] as const;
   const seen = new Set<string>();
   for (const [kind, env, getter, setter] of roles) {

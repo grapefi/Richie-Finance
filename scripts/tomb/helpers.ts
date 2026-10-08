@@ -14,6 +14,7 @@ export const CONTRACTS = {
   redeem: "contracts/tomb/PegRedeem.sol:PegRedeem",
   rebates: "contracts/tomb/Rebates.sol:RebateTreasury",
   zap: "contracts/tomb/Zap.sol:PegPdaiZap",
+  shareZap: "contracts/tomb/Zap.sol:ShareWplsZap",
 } as const;
 
 export async function context() {

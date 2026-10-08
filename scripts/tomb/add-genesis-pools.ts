@@ -8,6 +8,18 @@ type PoolConfig = {
   lastRewardTime?: string | number;
 };
 
+// Only use this for the generated poolInfo array getter, whose bounds revert
+// has no reason/data. Do not swallow unrelated RPC/network failures.
+export function isPoolBoundsRevert(error: unknown): boolean {
+  const failure = error as { code?: string | number; data?: string; message?: string } | null;
+  if (!failure) return false;
+  return String(error).includes("0x32") || String(error).includes("out-of-bounds") ||
+    String(error).includes("Transaction reverted without a reason string") ||
+    (failure.code === "CALL_EXCEPTION" && failure.data === "0x") ||
+    (failure.code === -32000 && failure.message?.trim().toLowerCase() === "execution reverted" &&
+      (failure.data === undefined || failure.data === "0x"));
+}
+
 export async function main(ctx?: Context) {
   ctx ??= await context();
   const genesis = await contract(ctx, "genesis", "TOMB_GENESIS_ADDRESS");
@@ -32,10 +44,7 @@ export async function main(ctx?: Context) {
     catch (error) {
       // Solidity's generated public-array getter uses an empty revert for bounds,
       // unlike an explicit array access which emits Panic(0x32).
-      const failure = error as { code?: string; data?: string };
-      if (String(error).includes("0x32") || String(error).includes("out-of-bounds") ||
-          String(error).includes("Transaction reverted without a reason string") ||
-          (failure.code === "CALL_EXCEPTION" && failure.data === "0x")) break;
+      if (isPoolBoundsRevert(error)) break;
       throw error;
     }
   }
@@ -57,7 +66,16 @@ export async function main(ctx?: Context) {
       `Adding pool ${index}: token=${pool.token}, allocation=${allocPoint}, fee=${depositFeeBps} bps`,
     );
     const pid = existing.get(pool.token);
-    if (pid === undefined) await send("Add Genesis pool", () => genesis.add(allocPoint, pool.token, true, lastRewardTime, depositFeeBps));
+    if (pid === undefined) {
+      const estimatedGas = await genesis.add.estimateGas(allocPoint, pool.token, true, lastRewardTime, depositFeeBps);
+      // Reward updates can cost more in the mined block than in the estimation block.
+      // Round up and keep withUpdate=true so existing rewards are accounted for.
+      const gasLimit = (estimatedGas * 150n + 99n) / 100n;
+      console.log(`Add pool gas: estimated=${estimatedGas}, limit=${gasLimit} (50% margin)`);
+      await send("Add Genesis pool", () => genesis.add(
+        allocPoint, pool.token, true, lastRewardTime, depositFeeBps, { gasLimit },
+      ));
+    }
     else {
       const current = await genesis.poolInfo(pid);
       if (current.allocPoint !== allocPoint) await send(`Set allocation ${pid}`, () => genesis.set(pid, allocPoint));

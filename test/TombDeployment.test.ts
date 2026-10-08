@@ -7,7 +7,7 @@ import { main as deployPlsOracle } from "../scripts/tomb/deploy-rebate-pls-oracl
 import { main as deployRedeem } from "../scripts/tomb/deploy-redeem.js";
 import { main as deployRebates } from "../scripts/tomb/deploy-rebates.js";
 import { main as deployZap } from "../scripts/tomb/deploy-zap.js";
-import { main as genesisPools } from "../scripts/tomb/add-genesis-pools.js";
+import { main as genesisPools, isPoolBoundsRevert } from "../scripts/tomb/add-genesis-pools.js";
 import { main as configureFarm } from "../scripts/tomb/configure-farm.js";
 import { main as configureSystem } from "../scripts/tomb/configure-system.js";
 import { main as configureRedeem } from "../scripts/tomb/configure-redeem.js";
@@ -18,6 +18,13 @@ import { main as transferAdmin } from "../scripts/tomb/transfer-administration.j
 const { ethers, networkHelpers } = await network.connect();
 
 describe("Tomb deployment and configuration scripts", () => {
+  it("recognizes PulseChain empty getter reverts without hiding other RPC failures", () => {
+    expect(isPoolBoundsRevert(Object.assign(new Error("execution reverted"), { code: -32000, data: undefined }))).to.equal(true);
+    expect(isPoolBoundsRevert({ code: "CALL_EXCEPTION", data: "0x" })).to.equal(true);
+    expect(isPoolBoundsRevert({ code: -32000, message: "rate limit exceeded" })).to.equal(false);
+    expect(isPoolBoundsRevert({ code: -32000, message: "execution reverted", data: "0x1234" })).to.equal(false);
+    expect(isPoolBoundsRevert({ code: "NETWORK_ERROR", message: "execution reverted" })).to.equal(false);
+  });
   it("deploys remaining contracts, configures and funds once, primes PSM, and transfers administration", async () => {
     const saved = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith("TOMB_")));
     for (const key of Object.keys(saved)) delete process.env[key];
@@ -111,7 +118,17 @@ describe("Tomb deployment and configuration scripts", () => {
       await ethers.provider.send("hardhat_setCode", ["0x165C3410fC91EF562C50559f7d2289fEbed552d9", await ethers.provider.getCode(await router.getAddress())]);
       const pegPair = await ethers.deployContract("TombScriptPair", [await peg.getAddress(), "0x6B175474E89094C44Da98b954EedeAC495271d0F"]);
       process.env.TOMB_PEG_PDAI_PAIR_ADDRESS = await pegPair.getAddress();
-      const zap = await deployZap(ctx);
+      const factoryMock = await ethers.deployContract("TombScriptFactory");
+      const factoryAddress = "0x29eA7545DEf87022BAdc76323F373EA1e707C523";
+      await ethers.provider.send("hardhat_setCode", [factoryAddress, await ethers.provider.getCode(await factoryMock.getAddress())]);
+      const factory = await ethers.getContractAt("TombScriptFactory", factoryAddress);
+      await factory.setPair(await peg.getAddress(), "0x6B175474E89094C44Da98b954EedeAC495271d0F", await pegPair.getAddress());
+      await factory.setPair(await share.getAddress(), wplsAddress, await pair.getAddress());
+      const { pegZap: zap, shareZap } = await deployZap(ctx);
+      process.env.TOMB_SHARE_ZAP_ADDRESS = await shareZap.getAddress();
+      expect(await shareZap.TOKEN()).to.equal(await share.getAddress());
+      expect(await shareZap.QUOTE()).to.equal(wplsAddress);
+      expect(await shareZap.LP()).to.equal(await pair.getAddress());
       process.env.TOMB_ZAP_ADDRESS = await zap.getAddress();
       process.env.TOMB_ADMIN_ADDRESS = admin.address;
       await transferAdmin(ctx);
@@ -125,6 +142,7 @@ describe("Tomb deployment and configuration scripts", () => {
       expect(await plsOracle.owner()).to.equal(admin.address);
       expect(await redeem.owner()).to.equal(admin.address);
       expect(await zap.owner()).to.equal(admin.address);
+      expect(await shareZap.owner()).to.equal(admin.address);
     } finally {
       for (const key of Object.keys(process.env)) if (key.startsWith("TOMB_")) delete process.env[key];
       Object.assign(process.env, saved);

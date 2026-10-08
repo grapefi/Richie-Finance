@@ -9,7 +9,11 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IPulseXPair} from "./interfaces/IPulseXPair.sol";
 import {IPulseXRouter02} from "./interfaces/IPulseXRouter02.sol";
 
-contract PegPdaiZap is Ownable, ReentrancyGuard {
+interface IPulseXZapFactory {
+    function getPair(address tokenA, address tokenB) external view returns (address);
+}
+
+abstract contract PulseXPairZap is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     struct ZapInCache {
@@ -31,8 +35,9 @@ contract PegPdaiZap is Ownable, ReentrancyGuard {
     address public constant PDAI =
         0x6B175474E89094C44Da98b954EedeAC495271d0F;
 
-    IERC20 public immutable PEG;
-    IERC20 public immutable PEG_PDAI_LP;
+    IERC20 public immutable TOKEN;
+    IERC20 public immutable QUOTE;
+    IERC20 public immutable LP;
     IPulseXRouter02 public immutable ROUTER;
 
     event ZappedIn(
@@ -48,9 +53,10 @@ contract PegPdaiZap is Ownable, ReentrancyGuard {
         uint256 pdaiAmount
     );
 
-    constructor(address peg, address pegPdaiLp) Ownable(msg.sender) {
+    constructor(address peg, address quote, address pegPdaiLp) Ownable(msg.sender) {
         require(peg != address(0), "PegPdaiZap: zero PEG");
         require(pegPdaiLp != address(0), "PegPdaiZap: zero LP");
+        require(quote != address(0) && quote != peg, "Zap: invalid quote");
 
         IPulseXRouter02 router = IPulseXRouter02(PULSEX_V2_ROUTER);
         require(
@@ -58,17 +64,22 @@ contract PegPdaiZap is Ownable, ReentrancyGuard {
             "PegPdaiZap: wrong factory"
         );
         require(router.WPLS() == WPLS, "PegPdaiZap: wrong WPLS");
+        require(
+            IPulseXZapFactory(PULSEX_V2_FACTORY).getPair(peg, quote) == pegPdaiLp,
+            "Zap: unregistered PulseX V2 pair"
+        );
 
         address token0 = IPulseXPair(pegPdaiLp).token0();
         address token1 = IPulseXPair(pegPdaiLp).token1();
         require(
-            (token0 == peg && token1 == PDAI) ||
-                (token0 == PDAI && token1 == peg),
+            (token0 == peg && token1 == quote) ||
+                (token0 == quote && token1 == peg),
             "PegPdaiZap: wrong pair"
         );
 
-        PEG = IERC20(peg);
-        PEG_PDAI_LP = IERC20(pegPdaiLp);
+        TOKEN = IERC20(peg);
+        QUOTE = IERC20(quote);
+        LP = IERC20(pegPdaiLp);
         ROUTER = router;
     }
 
@@ -83,7 +94,7 @@ contract PegPdaiZap is Ownable, ReentrancyGuard {
         uint256 deadline
     ) external nonReentrant returns (uint256 liquidity) {
         require(
-            inputToken == address(PEG) || inputToken == PDAI,
+            inputToken == address(TOKEN) || inputToken == address(QUOTE),
             "PegPdaiZap: unsupported token"
         );
         require(amount > 1, "PegPdaiZap: amount too small");
@@ -100,7 +111,7 @@ contract PegPdaiZap is Ownable, ReentrancyGuard {
             "PegPdaiZap: unsupported input token"
         );
 
-        cache.otherToken = inputToken == address(PEG) ? PDAI : address(PEG);
+        cache.otherToken = inputToken == address(TOKEN) ? address(QUOTE) : address(TOKEN);
         cache.other = IERC20(cache.otherToken);
         cache.otherBalanceBefore = cache.other.balanceOf(address(this));
 
@@ -145,12 +156,12 @@ contract PegPdaiZap is Ownable, ReentrancyGuard {
         require(liquidity > 0, "PegPdaiZap: zero liquidity");
         require(deadline >= block.timestamp, "PegPdaiZap: expired");
 
-        PEG_PDAI_LP.safeTransferFrom(msg.sender, address(this), liquidity);
-        PEG_PDAI_LP.forceApprove(address(ROUTER), liquidity);
+        LP.safeTransferFrom(msg.sender, address(this), liquidity);
+        LP.forceApprove(address(ROUTER), liquidity);
 
         (pegAmount, pdaiAmount) = ROUTER.removeLiquidity(
-            address(PEG),
-            PDAI,
+            address(TOKEN),
+            address(QUOTE),
             liquidity,
             minPegAmount,
             minPdaiAmount,
@@ -158,7 +169,7 @@ contract PegPdaiZap is Ownable, ReentrancyGuard {
             deadline
         );
 
-        PEG_PDAI_LP.forceApprove(address(ROUTER), 0);
+        LP.forceApprove(address(ROUTER), 0);
         emit ZappedOut(msg.sender, liquidity, pegAmount, pdaiAmount);
     }
 
@@ -205,4 +216,17 @@ contract PegPdaiZap is Ownable, ReentrancyGuard {
         (bool success, ) = payable(owner()).call{value: amount}("");
         require(success, "PegPdaiZap: PLS transfer failed");
     }
+}
+
+contract PegPdaiZap is PulseXPairZap {
+    constructor(address peg, address pair) PulseXPairZap(peg, PDAI, pair) {}
+    // Preserve the existing PEG zap's public getters.
+    function PEG() external view returns (IERC20) { return TOKEN; }
+    function PEG_PDAI_LP() external view returns (IERC20) { return LP; }
+}
+
+contract ShareWplsZap is PulseXPairZap {
+    constructor(address share, address pair) PulseXPairZap(share, WPLS, pair) {}
+    function SHARE() external view returns (IERC20) { return TOKEN; }
+    function SHARE_WPLS_LP() external view returns (IERC20) { return LP; }
 }

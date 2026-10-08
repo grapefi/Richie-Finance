@@ -29,6 +29,7 @@ contract TombScriptRebateOracle {
 }
 
 contract TombScriptPair {
+    function factory() external pure returns (address) { return 0x29eA7545DEf87022BAdc76323F373EA1e707C523; }
     address public token0;
     address public token1;
     uint32 private timestamp;
@@ -46,4 +47,13 @@ contract TombScriptPair {
 contract TombScriptRouter {
     function factory() external pure returns (address) { return 0x29eA7545DEf87022BAdc76323F373EA1e707C523; }
     function WPLS() external pure returns (address) { return 0xA1077a294dDE1B09bB078844df40758a5D0f9a27; }
+}
+
+contract TombScriptFactory {
+    mapping(bytes32 => address) private pairs;
+    function setPair(address a, address b, address pair) external {
+        pairs[keccak256(abi.encode(a, b))] = pair;
+        pairs[keccak256(abi.encode(b, a))] = pair;
+    }
+    function getPair(address a, address b) external view returns (address) { return pairs[keccak256(abi.encode(a, b))]; }
 }

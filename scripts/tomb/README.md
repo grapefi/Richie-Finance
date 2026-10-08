@@ -131,17 +131,23 @@ add every run. The owner must hold sufficient PDAI. Configuration approves
 and supplies only the shortfall; it does not withdraw an excess reserve.
 Zero target means no funding.
 
-### PEG/PDAI zap
+### PEG/pDAI and SHARE/WPLS zaps
 
 ```powershell
 npm run tomb:deploy:zap -- --network pulse
 ```
 
-Needs PEG and `TOMB_PEG_PDAI_PAIR_ADDRESS`, an actual PEG/PDAI pair on the
-fixed PulseX V2 factory. The constructor validates its pair/router links.
+Needs PEG, SHARE, `TOMB_PEG_PDAI_PAIR_ADDRESS`, and `TOMB_SHARE_PAIR_ADDRESS`.
+Both must be actual, funded pairs registered on the fixed PulseX V2 factory.
+The script validates both before deploying and prints `TOMB_ZAP_ADDRESS`
+and `TOMB_SHARE_ZAP_ADDRESS`. The constructors validate pair/router links.
 This contract hardcodes PulseChain mainnet router/factory/WPLS/PDAI; it is
 not a generic-network zap. There are no additional initialization/fee settings.
-The final administration script handles its ownership.
+The final administration script handles both ownerships. Each zap accepts only
+its two underlying ERC20 tokens; native PLS requires wrapping/swapping first.
+The UI uses each pool's configured zap contract for atomic swap/add-liquidity.
+PLS conversion/wrapping and optional Farm deposits remain separate transactions.
+After redeployment, update the UI's matching zap address in `src/constants/contracts.ts`.
 
 ### Rebate treasury (optional; not part of the bondless core)
 

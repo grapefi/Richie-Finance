@@ -24,7 +24,7 @@ async function main() {
   const peg = requiredAddress("TOMB_PEG_ADDRESS");
   const share = requiredAddress("TOMB_SHARE_ADDRESS");
   const oracle = requiredAddress("TOMB_ORACLE_ADDRESS");
-  const startTime = requiredTimestamp("TOMB_START_TIME");
+  const startTime = requiredTimestamp("TOMB_TREASURY_START_TIME");
 
   console.log("Deployer:", deployer.address);
 

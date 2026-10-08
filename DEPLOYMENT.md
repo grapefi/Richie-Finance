@@ -302,14 +302,33 @@ owner rather than being burned.
 
 ## 10. Deploy the zap
 
-Optional, with the funded PulseX V2 PEG/PDAI pair configured:
+Optional, with both funded PulseX V2 PEG/pDAI and SHARE/WPLS pairs configured in the root `.env`:
+
+```dotenv
+TOMB_PEG_PDAI_PAIR_ADDRESS=0x74EDdc84AeCA6E1ccf96Be708f8f3b56F852BC45
+TOMB_SHARE_PAIR_ADDRESS=0xA55F23241B3068D9aF3A7F3CA51747bD2d709A6f
+```
+
+Also set `TOMB_PEG_ADDRESS` and `TOMB_SHARE_ADDRESS` to the deployed tokens.
+Use LP addresses here, never the PEG or SHARE token address.
 
 ```powershell
 npm run tomb:deploy:zap -- --network pulse
 ```
 
-Save `TOMB_ZAP_ADDRESS`. No additional zap configuration script is required.
+This command deploys **two** contracts. Save `TOMB_ZAP_ADDRESS` (PEG/pDAI)
+and `TOMB_SHARE_ZAP_ADDRESS` (SHARE/WPLS). It validates both pairs' tokens,
+factory registration, and nonzero reserves before submitting either deployment.
+No additional zap configuration script is required.
 Its router/factory/WPLS/PDAI addresses are fixed to PulseChain mainnet.
+Each contract accepts either underlying ERC20 token through `zapInToken` and
+returns both underlying tokens through `zapOut`. Native PLS must first be wrapped
+or swapped. The UI now connects PEG/pDAI to `0x350a687BdcfcfE011b4f9a6E5567c7A58Bfc4b31`
+and SHARE/WPLS to `0x51d34399DE1645C1AFa681B77Ba3D5daaC54dE9c`.
+Each zap's swap and liquidity creation are atomic; native PLS conversion/wrapping
+and optional Farm deposit remain separate transactions. If redeploying, update
+the matching zap address in the UI's `src/constants/contracts.ts`.
+Do not repeat this command unintentionally: it deploys new addresses.
 
 ## 11. Deploy USDC and PLS rebates
 
@@ -513,7 +532,8 @@ address, source/name, and creation transaction hash each time:
 | Each oracle | `contracts/tomb/Oracle.sol:Oracle` |
 | PEG redemption | `contracts/tomb/PegRedeem.sol:PegRedeem` |
 | Rebates | `contracts/tomb/Rebates.sol:RebateTreasury` |
-| Zap | `contracts/tomb/Zap.sol:PegPdaiZap` |
+| PEG/pDAI zap | `contracts/tomb/Zap.sol:PegPdaiZap` |
+| SHARE/WPLS zap | `contracts/tomb/Zap.sol:ShareWplsZap` |
 
 Use the transaction that **created** the contract, not a later initialization,
 configuration, liquidity, or oracle-update transaction. Sourcify constructor
@@ -576,5 +596,76 @@ the addresses selected for those roles.
 - [ ] Small live tests and frontend address configuration are complete.
 - [ ] Verification is checked; final administration handover is confirmed.
 - [ ] Remaining security-review risks are understood, not assumed fixed by setup.
+
+## Collecting Farm PSM fees (PLS)
+
+Native PLS harvest fees remain in the Farm until its **operator** calls
+`collectPsmFees(uint256 amount)`. Collection sends PLS to the configured
+`psmFeeRecipient`, not necessarily the calling wallet. It does not withdraw
+users' LP deposits or the Farm's SHARE reward tokens.
+
+### Check authority, recipient, and available balance
+
+Open PowerShell in the deployment repository:
+
+```powershell
+cd C:\repo\Richie-Finance
+npx hardhat console --network pulse
+```
+
+Inside the console:
+
+```javascript
+const { ethers } = await network.connect();
+const farm = await ethers.getContractAt("contracts/tomb/Farm.sol:ShareRewardPool", process.env.TOMB_FARM_ADDRESS);
+const [signer] = await ethers.getSigners();
+console.log("Calling wallet:", signer.address);
+console.log("Operator:", await farm.operator());
+console.log("Recipient:", await farm.psmFeeRecipient());
+const balance = await ethers.provider.getBalance(await farm.getAddress());
+console.log("Available PLS:", ethers.formatEther(balance));
+```
+
+For the current deployment, `TOMB_FARM_ADDRESS` is
+`0xa0CBde0D37dFd1438A49A74fA47578439Ec35a23`. Confirm your root `.env` points
+to the intended Farm before continuing.
+
+The calling wallet must match `operator()`. Confirm that `psmFeeRecipient()` is
+the intended destination. The wallet also needs its own PLS for transaction gas.
+If administration was transferred to a multisig, execute the collection through
+that multisig; its owner's ordinary wallet is not itself the Farm operator.
+
+### Collect all available PLS
+
+After confirming the checks above, fetch the latest balance and collect it:
+
+```javascript
+const amountToCollect = await ethers.provider.getBalance(await farm.getAddress());
+if (amountToCollect > 0n) {
+  const tx = await farm.collectPsmFees(amountToCollect);
+  console.log("Collection transaction:", tx.hash);
+  await tx.wait();
+} else {
+  console.log("No PLS available to collect.");
+}
+```
+
+Fees received after this balance read are not included in that collection.
+
+### Collect a specific amount
+
+Instead of collecting the full balance, for example collect **100 PLS**:
+
+```javascript
+const tx = await farm.collectPsmFees(ethers.parseEther("100"));
+console.log("Collection transaction:", tx.hash);
+await tx.wait();
+```
+
+Run one collection option, not both unless you intentionally want two
+transactions. The amount must not exceed the Farm's current native PLS balance.
+`parseEther("100")` represents 100 PLS in raw 18-decimal units, not a USD amount.
+An unauthorized caller, insufficient contract balance, or recipient that rejects
+native PLS will cause the transaction to revert. Enter `.exit` to leave the console.
 
 For further script-specific details, see [scripts/tomb/README.md](scripts/tomb/README.md).
