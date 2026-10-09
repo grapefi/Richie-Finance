@@ -13,6 +13,7 @@ export const CONTRACTS = {
   boardroom: "contracts/tomb/Boardroom.sol:Boardroom",
   redeem: "contracts/tomb/PegRedeem.sol:PegRedeem",
   rebates: "contracts/tomb/Rebates.sol:RebateTreasury",
+  rebateComposite: "contracts/tomb/RebateCompositeOracle.sol:RebateCompositeOracle",
   zap: "contracts/tomb/Zap.sol:PegPdaiZap",
   shareZap: "contracts/tomb/Zap.sol:ShareWplsZap",
 } as const;

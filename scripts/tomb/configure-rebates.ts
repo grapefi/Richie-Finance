@@ -11,7 +11,17 @@ export async function main(ctx?: Context) {
   const target = uint("TOMB_REBATE_SHARE_RESERVE_WEI", 0n);
   const age = uint("TOMB_REBATE_MAX_ORACLE_AGE", 86400n);
   if (age < 300n || age > 604800n) throw new Error("Rebate oracle age must be 300–604800 seconds");
-  const shareOracle = new Contract(await rebates.ShareOracle(), ["function getPeriod() view returns(uint256)"], ctx.signer);
+  const shareOracleAddress = process.env.TOMB_REBATE_SHARE_ORACLE_ADDRESS
+    ? address("TOMB_REBATE_SHARE_ORACLE_ADDRESS") : getAddress(await rebates.ShareOracle());
+  await code(ctx, shareOracleAddress);
+  const shareOracle = new ctx.ethers.Contract(shareOracleAddress, [
+    "function getPeriod() view returns(uint256)", "function token0() view returns(address)",
+    "function token1() view returns(address)",
+  ], ctx.signer);
+  const shareTokens = [getAddress(await shareOracle.token0()), getAddress(await shareOracle.token1())];
+  if (!shareTokens.includes(getAddress(await rebates.Share())) || !shareTokens.includes(getAddress(await rebates.USDC()))) {
+    throw new Error("Rebate share oracle must quote SHARE in bridged USDC");
+  }
   if (await shareOracle.getPeriod() > age) throw new Error("Rebate maximum oracle age must cover its update period");
   if (vesting === 0n) throw new Error("Vesting period must be positive");
   const assets = process.env.TOMB_REBATE_ASSETS ? jsonArray<Asset>("TOMB_REBATE_ASSETS") : [];
@@ -52,6 +62,7 @@ export async function main(ctx?: Context) {
   const share = new Contract(await rebates.Share(), ["function balanceOf(address) view returns(uint256)", "function transfer(address,uint256) returns(bool)"], ctx.signer);
   const balance = await share.balanceOf(await rebates.getAddress());
   if (target > balance && await share.balanceOf(ctx.signer.address) < target - balance) throw new Error("Signer has insufficient SHARE for rebate reserve");
+  if (getAddress(await rebates.ShareOracle()) !== shareOracleAddress) await send("Set rebate share pricing oracle", () => rebates.setShareOracle(shareOracleAddress));
   if (await rebates.discount() !== discount || await rebates.bondVesting() !== vesting) await send("Set rebate pricing and vesting", () => rebates.setBondParameters(discount, vesting));
   if (await rebates.maxOracleAge() !== age) await send("Set rebate oracle maximum age", () => rebates.setMaxOracleAge(age));
   for (const asset of validated) {

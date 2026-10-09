@@ -152,7 +152,7 @@ After redeployment, update the UI's matching zap address in `src/constants/contr
 ### Rebate treasury (optional; not part of the bondless core)
 
 ```powershell
-npm run tomb:deploy:rebate-oracle -- --network pulse
+npm run tomb:deploy:rebate-composite-oracle -- --network pulse
 npm run tomb:deploy:rebates -- --network pulse
 npm run tomb:configure:rebates -- --network pulse
 ```
@@ -163,10 +163,32 @@ Ethereum-address USDC copy. USDC is enabled automatically at deployment.
 Prices are denominated in USDC, not a guarantee that bridged USDC always trades
 at $1. Bridge/custody/depeg risks remain.
 
-Create and seed a SHARE/bridged-USDC pair first. Set
+Preferred: reuse `TOMB_SHARE_ORACLE_ADDRESS` (RICH/WPLS) and
+`TOMB_REBATE_PLS_ORACLE_ADDRESS` (WPLS/bridged USDC). Deploy the latter with
+`tomb:deploy:rebate-pls-oracle` first if necessary. No RICH/USDC LP is required.
+Run `tomb:deploy:rebate-composite-oracle`, then save both printed variables:
+`TOMB_REBATE_COMPOSITE_ORACLE_ADDRESS` and `TOMB_REBATE_SHARE_ORACLE_ADDRESS`
+to the same adapter address. The adapter uses Solidity 0.8.20; both source
+oracles keep the existing Solidity 0.6 Oracle contract unchanged.
+Update both sources with `npm run tomb:update:rebate-oracles -- --network pulse`
+after full observation windows. Use comparable source periods; the cross-price
+is a product of stored TWAPs, not an exact direct RICH/USDC TWAP. Both pools
+still need sufficient liquidity. The oldest timestamp is reported and both
+sources must be fresh/nonzero; no spot-price fallback is used.
+The adapter does not repair the existing Oracle.sol short-window update finding:
+direct updates by another caller can still overwrite a source average near an
+epoch boundary. Its guarded update route cannot block those direct calls.
+The adapter has immutable sources and maximum age and no owner/operator.
+If it needs different sources or an age limit, deploy another adapter.
+`tomb:configure:rebates` sets the treasury's share oracle from the configured
+address, including for an existing compatible treasury, without moving reserves
+or altering vesting obligations. Set both adapter env variables so the final
+administration-transfer script skips the ownerless adapter.
+
+Legacy direct-pair alternative only: create and seed a SHARE/bridged-USDC pair. Set
 `TOMB_REBATE_SHARE_PAIR_ADDRESS`, `TOMB_REBATE_ORACLE_PERIOD` (default 3,600
 seconds), and `TOMB_REBATE_ORACLE_START_TIME` (current Unix time). Deploy the
-rebate oracle and save its printed `TOMB_REBATE_SHARE_ORACLE_ADDRESS`.
+direct rebate oracle with `tomb:deploy:rebate-oracle` and save its printed `TOMB_REBATE_SHARE_ORACLE_ADDRESS`.
 This MUST be separate from the farm's SHARE/WPLS oracle. Update it with
 `tomb:update:oracles` after a full observation period before accepting deposits.
 

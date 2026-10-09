@@ -111,7 +111,7 @@ nonzero reserves. Use a **PulseX V2** PEG/PDAI pair for compatibility with the z
 | PEG/PDAI | Treasury PEG price | `TOMB_PAIR_ADDRESS` |
 | PEG/PDAI, same pair | Zap liquidity | `TOMB_PEG_PDAI_PAIR_ADDRESS` |
 | SHARE/WPLS | Farm PLS fee pricing | `TOMB_SHARE_PAIR_ADDRESS` |
-| SHARE/bridged USDC | Rebate SHARE pricing | `TOMB_REBATE_SHARE_PAIR_ADDRESS` |
+| SHARE/bridged USDC | Legacy direct rebate pricing only; NOT required with the composite oracle | `TOMB_REBATE_SHARE_PAIR_ADDRESS` |
 | WPLS/bridged USDC | Native PLS rebate pricing | `TOMB_REBATE_PLS_PAIR_ADDRESS` |
 
 The rebate pairs/oracles are only required if deploying those optional features.
@@ -169,8 +169,8 @@ Run the required deployments, skipping optional rebate oracles if unused:
 ```powershell
 npm run tomb:deploy:oracle -- --network pulse
 npm run tomb:deploy:share-oracle -- --network pulse
-npm run tomb:deploy:rebate-oracle -- --network pulse
 npm run tomb:deploy:rebate-pls-oracle -- --network pulse
+npm run tomb:deploy:rebate-composite-oracle -- --network pulse
 ```
 
 Save their distinct addresses:
@@ -178,11 +178,14 @@ Save their distinct addresses:
 ```dotenv
 TOMB_ORACLE_ADDRESS=0xPegOracle
 TOMB_SHARE_ORACLE_ADDRESS=0xShareWplsOracle
-TOMB_REBATE_SHARE_ORACLE_ADDRESS=0xShareUsdcOracle
+TOMB_REBATE_SHARE_ORACLE_ADDRESS=0xCompositeAdapter
+TOMB_REBATE_COMPOSITE_ORACLE_ADDRESS=0xCompositeAdapter
 TOMB_REBATE_PLS_ORACLE_ADDRESS=0xWplsUsdcOracle
 ```
 
-Do not reuse SHARE/WPLS pricing for USDC rebates: the quote currencies differ.
+Do not pass the SHARE/WPLS oracle directly to rebates: its quote is WPLS.
+The composite adapter chains that oracle with WPLS/USDC to return raw USDC units.
+Save `TOMB_REBATE_PLS_ORACLE_ADDRESS` after deploying it, before deploying the adapter.
 Keep the original constructor timestamps for verification.
 
 **Deployment does not call `update()`.** The stored averages initially remain
@@ -332,7 +335,50 @@ Do not repeat this command unintentionally: it deploys new addresses.
 
 ## 11. Deploy USDC and PLS rebates
 
-Optional; requires Treasury, SHARE, and the separate SHARE/USDC oracle:
+Optional; requires Treasury, SHARE, and the composite RICH -> WPLS -> USDC oracle.
+No RICH/USDC LP is needed. Reuse the farm's RICH/WPLS oracle and an existing
+WPLS/bridged-USDC oracle. Set their addresses, then deploy the adapter:
+
+```powershell
+npm run tomb:deploy:rebate-composite-oracle -- --network pulse
+```
+
+Save BOTH printed variables in the root `.env`:
+
+```dotenv
+TOMB_REBATE_COMPOSITE_ORACLE_ADDRESS=0xCompositeAdapter
+TOMB_REBATE_SHARE_ORACLE_ADDRESS=0xCompositeAdapter
+```
+
+The adapter has immutable sources and maximum age (`TOMB_REBATE_MAX_ORACLE_AGE`
+at deployment), and no owner/operator. Keep both variables set so administration
+transfer skips it; transfer the underlying Oracle roles as usual. To change the
+adapter's source addresses or age limit, deploy a new adapter.
+
+Prime and maintain BOTH source observations:
+
+```powershell
+npm run tomb:update:rebate-oracles -- --network pulse
+```
+
+This command skips sources until both their epoch and full observation window
+are due. Repeat after the printed timestamp if skipped. It leaves the general
+`tomb:update:oracles` script untouched. Use comparable observation periods and
+keep both within the adapter and treasury freshness limits. Quotes reject stale,
+future, zero-timestamp, and zero-price sources. `1e18` raw RICH returns `1e6`
+USDC units per whole USDC, with no extra decimal scaling needed. This is a
+cross-price from two stored TWAPs, not an exact direct-pair TWAP; liquidity,
+manipulation, bridge and USDC-depeg risks remain. `twap()` on the adapter is a
+compatibility alias for the stored quote, not a fresh shorter-window sample.
+
+Important inherited limitation: Oracle.sol's epoch scheduling permits a caller
+to overwrite a long average with a very short observation around an epoch
+boundary. The adapter's update method and maintenance script avoid doing this,
+but cannot prevent someone calling either source Oracle directly. Freshness is
+not proof of a full-length TWAP. This adapter does NOT fix that existing Oracle
+finding; address that separately before relying on the rebates in production.
+
+For a new treasury:
 
 ```powershell
 npm run tomb:deploy:rebates -- --network pulse
@@ -362,6 +408,10 @@ npm run tomb:configure:rebates -- --network pulse
 ```
 
 USDC is enabled by the constructor; direct USDC needs no additional asset oracle.
+For an existing compatible USDC RebateTreasury, this configuration command can
+switch `ShareOracle` to the adapter using its owner-only setter. Claims, reserves
+and vesting remain in place; this is not a treasury upgrade or migration.
+
 PLS requires the WPLS/USDC oracle. Both rebate price observations must be fresh
 and nonzero before native PLS rebates work. Enabled LP rebate assets are rejected
 by the configuration script because of manipulation risk.

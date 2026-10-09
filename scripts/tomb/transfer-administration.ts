@@ -28,6 +28,9 @@ export async function main(ctx?: Context) {
   const seen = new Set<string>();
   for (const [kind, env, getter, setter] of roles) {
     if (!process.env[env]) continue;
+    // The composite adapter is immutable and has no owner/operator to transfer.
+    if (env === "TOMB_REBATE_SHARE_ORACLE_ADDRESS" && process.env.TOMB_REBATE_COMPOSITE_ORACLE_ADDRESS &&
+        address(env) === address("TOMB_REBATE_COMPOSITE_ORACLE_ADDRESS")) continue;
     const target = await contract(ctx, kind, env);
     const key = `${await target.getAddress()}:${getter}`;
     if (seen.has(key)) continue;
