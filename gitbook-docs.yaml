@@ -1,0 +1,12 @@
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+version: 1
+site:
+  title: Richie Finance Docs
+  structure:
+    - type: space
+      key: documentation
+      title: Documentation
+      path: documentation
+      default: true
+      content:
+        directory: ./
