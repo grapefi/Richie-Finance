@@ -48,52 +48,44 @@ contract Share is ERC20Burnable, Operator {
 
     // TOTAL MAX SUPPLY = 50,001
     uint256 public constant FARMING_POOL_REWARD_ALLOCATION = 40000 ether;
-    uint256 public constant COMMUNITY_FUND_POOL_ALLOCATION = 5000 ether;
-    uint256 public constant DEV_FUND_POOL_ALLOCATION = 5000 ether;
+    uint256 public constant COMMUNITY_FUND_POOL_ALLOCATION = 10000 ether;
 
     uint256 public constant VESTING_DURATION = 150 days;
     uint256 public startTime;
     uint256 public endTime;
 
     uint256 public communityFundRewardRate;
-    uint256 public devFundRewardRate;
-
-    address public communityFund;
-    address public devFund;
-
     uint256 public communityFundLastClaimed;
-    uint256 public devFundLastClaimed;
+    address public communityFund;
 
     bool public rewardPoolDistributed = false;
 
-    constructor(uint256 _startTime, address _communityFund, address _devFund) ERC20("Rich Shares", "RICH") {
+    event TreasuryFundChanged(
+        address indexed previousFund,
+        address indexed newFund
+    );
+
+    constructor(uint256 _startTime, address _communityFund) ERC20("Rich Shares", "RICH") {
         _mint(msg.sender, 1 ether); // mint 1 Share for initial pools deployment
 
         startTime = _startTime;
         endTime = startTime + VESTING_DURATION;
 
         communityFundLastClaimed = startTime;
-        devFundLastClaimed = startTime;
 
         communityFundRewardRate = COMMUNITY_FUND_POOL_ALLOCATION / VESTING_DURATION;
-        devFundRewardRate = DEV_FUND_POOL_ALLOCATION / VESTING_DURATION;
-
-        require(_devFund != address(0), "Address cannot be 0");
-        devFund = _devFund;
 
         require(_communityFund != address(0), "Address cannot be 0");
         communityFund = _communityFund;
     }
 
     function setTreasuryFund(address _communityFund) external {
-        require(msg.sender == devFund, "!dev");
-        communityFund = _communityFund;
-    }
+        require(msg.sender == communityFund, "!dao");
+        require(_communityFund != address(0), "zero fund");
 
-    function setDevFund(address _devFund) external {
-        require(msg.sender == devFund, "!dev");
-        require(_devFund != address(0), "zero");
-        devFund = _devFund;
+        address previousFund = communityFund;
+        communityFund = _communityFund;
+        emit TreasuryFundChanged(previousFund, _communityFund);
     }
 
     function unclaimedTreasuryFund() public view returns (uint256 _pending) {
@@ -101,28 +93,26 @@ contract Share is ERC20Burnable, Operator {
         if (_now > endTime) _now = endTime;
         if (communityFundLastClaimed >= _now) return 0;
         _pending = (_now - communityFundLastClaimed) * communityFundRewardRate;
-    }
 
-    function unclaimedDevFund() public view returns (uint256 _pending) {
-        uint256 _now = block.timestamp;
-        if (_now > endTime) _now = endTime;
-        if (devFundLastClaimed >= _now) return 0;
-        _pending = (_now - devFundLastClaimed) * devFundRewardRate;
+        // Pay the per-second division remainder with the final vesting claim
+        // so the community fund receives exactly 10,000 RICH in total.
+        if (_now == endTime) {
+            _pending +=
+                COMMUNITY_FUND_POOL_ALLOCATION -
+                communityFundRewardRate * VESTING_DURATION;
+        }
     }
 
     /**
-     * @dev Claim pending rewards to community and dev fund
+     * @dev Claim pending rewards to community fund
      */
     function claimRewards() external {
         uint256 _pending = unclaimedTreasuryFund();
-        if (_pending > 0 && communityFund != address(0)) {
+        if (_pending > 0) {
             _mint(communityFund, _pending);
-            communityFundLastClaimed = block.timestamp;
-        }
-        _pending = unclaimedDevFund();
-        if (_pending > 0 && devFund != address(0)) {
-            _mint(devFund, _pending);
-            devFundLastClaimed = block.timestamp;
+            communityFundLastClaimed = block.timestamp > endTime
+                ? endTime
+                : block.timestamp;
         }
     }
 

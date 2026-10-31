@@ -58,7 +58,6 @@ PULSECHAIN_PRIVATE_KEY=YOUR_DEPLOYMENT_WALLET_PRIVATE_KEY
 
 TOMB_START_TIME=YOUR_FUTURE_UNIX_TIMESTAMP
 TOMB_COMMUNITY_FUND=0xYourCommunityWallet
-TOMB_DEV_FUND=0xYourDevWallet
 ```
 
 All example addresses and uppercase placeholders must be replaced with actual

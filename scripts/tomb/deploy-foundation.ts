@@ -23,7 +23,6 @@ async function main() {
 
   const startTime = requiredTimestamp("TOMB_START_TIME");
   const communityFund = requiredAddress("TOMB_COMMUNITY_FUND");
-  const devFund = requiredAddress("TOMB_DEV_FUND");
 
   const latestBlock = await ethers.provider.getBlock("latest");
   if (!latestBlock || startTime <= BigInt(latestBlock.timestamp)) {
@@ -42,7 +41,7 @@ async function main() {
   const Share = await ethers.getContractFactory(
     "contracts/tomb/Share.sol:Share",
   );
-  const share = await Share.deploy(startTime, communityFund, devFund);
+  const share = await Share.deploy(startTime, communityFund);
   await share.waitForDeployment();
   const shareAddress = await share.getAddress();
   console.log("SHARE:", shareAddress);
@@ -58,7 +57,7 @@ async function main() {
   console.log("\nVerification commands:");
   console.log(`npx hardhat verify --network <network> ${pegAddress}`);
   console.log(
-    `npx hardhat verify --network <network> ${shareAddress} ${startTime} ${communityFund} ${devFund}`,
+    `npx hardhat verify --network <network> ${shareAddress} ${startTime} ${communityFund}`,
   );
   console.log(
     `npx hardhat verify --network <network> ${genesisAddress} ${pegAddress} ${startTime}`,

@@ -26,8 +26,9 @@ rerun against existing deployments without duplicating pools/reward distribution
 
 Run these commands from the repository root. They select PulseChain mainnet.
 
-1. Set `TOMB_START_TIME`, `TOMB_COMMUNITY_FUND`, and `TOMB_DEV_FUND`, then deploy
-   PEG, SHARE, and GenesisRewardPool:
+1. Set `TOMB_START_TIME` and `TOMB_COMMUNITY_FUND`, then deploy PEG, SHARE, and
+   GenesisRewardPool. The community fund receives the complete 10,000 RICH
+   treasury allocation linearly over 150 days:
 
    ```powershell
    npm run tomb:deploy:foundation -- --network pulse
