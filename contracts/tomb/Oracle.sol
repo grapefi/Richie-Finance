@@ -615,13 +615,6 @@ contract Epoch is Operator {
         return lastEpochTime.add(period);
     }
 
-    /* ========== GOVERNANCE ========== */
-
-    function setPeriod(uint256 _period) external onlyOperator {
-        require(_period >= 1 hours && _period <= 48 hours, '_period: out of range');
-        period = _period;
-    }
-
 }
 
 

@@ -1,7 +1,7 @@
 import { address, authority, code, context, contract, entry, flag, jsonArray, jsonUint, send, uint, type Context } from "./helpers.js";
 import { Contract, getAddress, isAddress, ZeroAddress } from "ethers";
 
-type Pool = { token: string; allocPoint: string | number; lastRewardTime?: string | number };
+type Pool = { token: string; allocPoint: string | number };
 export async function main(ctx?: Context) {
   ctx ??= await context();
   const farm = await contract(ctx, "farm", "TOMB_FARM_ADDRESS");
@@ -20,7 +20,7 @@ export async function main(ctx?: Context) {
     if (seen.has(pool.token) || pool.token === getAddress(await farm.share())) throw new Error("Duplicate pool or SHARE staking pool");
     seen.add(pool.token);
     jsonUint(pool.allocPoint, "allocPoint");
-    if (jsonUint(pool.lastRewardTime ?? 0, "lastRewardTime") !== 0n) throw new Error("Use lastRewardTime=0; delayed farm activation is unsupported by this script");
+    if ("lastRewardTime" in pool) throw new Error("lastRewardTime is no longer supported; use allocPoint=0 for an inactive pool");
     await code(ctx, pool.token);
   }
   const oracleAddress = process.env.TOMB_SHARE_ORACLE_ADDRESS ? address("TOMB_SHARE_ORACLE_ADDRESS") : undefined;
@@ -47,7 +47,7 @@ export async function main(ctx?: Context) {
     const allocation = jsonUint(pool.allocPoint, "allocPoint");
     const pid = existing.get(pool.token);
     if (pid === undefined) {
-      await send(`Add farm pool ${pool.token}`, () => farm.add(allocation, pool.token, true, 0));
+      await send(`Add farm pool ${pool.token}`, () => farm.add(allocation, pool.token));
     } else if ((await farm.poolInfo(pid)).allocPoint !== allocation) {
       await send(`Set farm allocation ${pid}`, () => farm.set(pid, allocation));
     }

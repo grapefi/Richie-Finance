@@ -24,7 +24,6 @@ contract GenesisRewardPool is ReentrancyGuard {
         uint256 allocPoint;
         uint256 lastRewardTime;
         uint256 accPegPerShare;
-        bool isStarted;
         uint16 depositFeeBps;
         uint256 totalStaked;
     }
@@ -83,53 +82,41 @@ contract GenesisRewardPool is ReentrancyGuard {
     function add(
         uint256 _allocPoint,
         IERC20 _token,
-        bool _withUpdate,
-        uint256 _lastRewardTime,
         uint16 _depositFeeBps
-    ) public onlyOperator {
+    ) external onlyOperator {
+        require(address(_token) != address(0), "GenesisPool: zero pool token");
         require(_depositFeeBps <= MAX_DEPOSIT_FEE_BPS, "deposit fee too high");
         require(_token != peg, "GenesisPool: PEG cannot be a pool token");
         checkPoolDuplicate(_token);
 
-        if (_withUpdate) {
-            massUpdatePools();
-        }
+        // Settle every existing pool with the old allocation weights before
+        // the new pool changes totalAllocPoint. A zero-allocation pool can
+        // accept deposits now and be activated later through set().
+        massUpdatePools();
 
-        if (block.timestamp < poolStartTime) {
-            if (_lastRewardTime == 0 || _lastRewardTime < poolStartTime) {
-                _lastRewardTime = poolStartTime;
-            }
-        } else if (_lastRewardTime == 0 || _lastRewardTime < block.timestamp) {
-            _lastRewardTime = block.timestamp;
-        }
-
-        bool _isStarted =
-            _lastRewardTime <= poolStartTime || _lastRewardTime <= block.timestamp;
+        uint256 lastRewardTime = block.timestamp < poolStartTime
+            ? poolStartTime
+            : block.timestamp;
 
         poolInfo.push(
             PoolInfo({
                 token: _token,
                 allocPoint: _allocPoint,
-                lastRewardTime: _lastRewardTime,
+                lastRewardTime: lastRewardTime,
                 accPegPerShare: 0,
-                isStarted: _isStarted,
                 depositFeeBps: _depositFeeBps,
                 totalStaked: 0
             })
         );
 
-        if (_isStarted) {
-            totalAllocPoint += _allocPoint;
-        }
+        totalAllocPoint += _allocPoint;
     }
 
     function set(uint256 _pid, uint256 _allocPoint) public onlyOperator {
         massUpdatePools();
 
         PoolInfo storage pool = poolInfo[_pid];
-        if (pool.isStarted) {
-            totalAllocPoint = totalAllocPoint - pool.allocPoint + _allocPoint;
-        }
+        totalAllocPoint = totalAllocPoint - pool.allocPoint + _allocPoint;
         pool.allocPoint = _allocPoint;
     }
 
@@ -179,7 +166,12 @@ contract GenesisRewardPool is ReentrancyGuard {
         uint256 accPegPerShare = pool.accPegPerShare;
         uint256 tokenSupply = pool.totalStaked;
 
-        if (block.timestamp > pool.lastRewardTime && tokenSupply != 0) {
+        if (
+            block.timestamp > pool.lastRewardTime &&
+            tokenSupply != 0 &&
+            totalAllocPoint != 0 &&
+            pool.allocPoint != 0
+        ) {
             uint256 generatedReward = getGeneratedReward(
                 pool.lastRewardTime,
                 block.timestamp
@@ -205,24 +197,21 @@ contract GenesisRewardPool is ReentrancyGuard {
         }
 
         uint256 tokenSupply = pool.totalStaked;
-        if (tokenSupply == 0) {
+        if (
+            tokenSupply == 0 ||
+            totalAllocPoint == 0 ||
+            pool.allocPoint == 0
+        ) {
             pool.lastRewardTime = block.timestamp;
             return;
         }
 
-        if (!pool.isStarted) {
-            pool.isStarted = true;
-            totalAllocPoint += pool.allocPoint;
-        }
-
-        if (totalAllocPoint > 0) {
-            uint256 generatedReward = getGeneratedReward(
-                pool.lastRewardTime,
-                block.timestamp
-            );
-            uint256 pegReward = (generatedReward * pool.allocPoint) / totalAllocPoint;
-            pool.accPegPerShare += (pegReward * 1e18) / tokenSupply;
-        }
+        uint256 generatedReward = getGeneratedReward(
+            pool.lastRewardTime,
+            block.timestamp
+        );
+        uint256 pegReward = (generatedReward * pool.allocPoint) / totalAllocPoint;
+        pool.accPegPerShare += (pegReward * 1e18) / tokenSupply;
 
         pool.lastRewardTime = block.timestamp;
     }
@@ -296,6 +285,7 @@ contract GenesisRewardPool is ReentrancyGuard {
     }
 
     function emergencyWithdraw(uint256 _pid) public nonReentrant {
+        updatePool(_pid);
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         uint256 amount = user.amount;

@@ -33,7 +33,6 @@ contract ShareRewardPool is ReentrancyGuard {
         uint256 allocPoint;
         uint256 lastRewardTime;
         uint256 accSharePerShare;
-        bool isStarted;
         uint256 totalStaked;
     }
 
@@ -103,52 +102,39 @@ contract ShareRewardPool is ReentrancyGuard {
 
     function add(
         uint256 _allocPoint,
-        IERC20 _token,
-        bool _withUpdate,
-        uint256 _lastRewardTime
-    ) public onlyOperator {
+        IERC20 _token
+    ) external onlyOperator {
         require(address(_token) != address(0), "ShareRewardPool: zero pool token");
         require(_token != share, "ShareRewardPool: reward token cannot be staked");
         checkPoolDuplicate(_token);
 
-        if (_withUpdate) {
-            massUpdatePools();
-        }
+        // Settle every existing pool with the old allocation weights before
+        // the new pool changes totalAllocPoint. A zero-allocation pool can
+        // accept deposits now and be activated later through set().
+        massUpdatePools();
 
-        if (block.timestamp < poolStartTime) {
-            if (_lastRewardTime == 0 || _lastRewardTime < poolStartTime) {
-                _lastRewardTime = poolStartTime;
-            }
-        } else if (_lastRewardTime == 0 || _lastRewardTime < block.timestamp) {
-            _lastRewardTime = block.timestamp;
-        }
-
-        bool _isStarted =
-            _lastRewardTime <= poolStartTime || _lastRewardTime <= block.timestamp;
+        uint256 lastRewardTime = block.timestamp < poolStartTime
+            ? poolStartTime
+            : block.timestamp;
 
         poolInfo.push(
             PoolInfo({
                 token: _token,
                 allocPoint: _allocPoint,
-                lastRewardTime: _lastRewardTime,
+                lastRewardTime: lastRewardTime,
                 accSharePerShare: 0,
-                isStarted: _isStarted,
                 totalStaked: 0
             })
         );
 
-        if (_isStarted) {
-            totalAllocPoint += _allocPoint;
-        }
+        totalAllocPoint += _allocPoint;
     }
 
     function set(uint256 _pid, uint256 _allocPoint) public onlyOperator {
         massUpdatePools();
 
         PoolInfo storage pool = poolInfo[_pid];
-        if (pool.isStarted) {
-            totalAllocPoint = totalAllocPoint - pool.allocPoint + _allocPoint;
-        }
+        totalAllocPoint = totalAllocPoint - pool.allocPoint + _allocPoint;
         pool.allocPoint = _allocPoint;
     }
 
@@ -179,7 +165,8 @@ contract ShareRewardPool is ReentrancyGuard {
         if (
             block.timestamp > pool.lastRewardTime &&
             tokenSupply != 0 &&
-            totalAllocPoint != 0
+            totalAllocPoint != 0 &&
+            pool.allocPoint != 0
         ) {
             uint256 generatedReward = getGeneratedReward(
                 pool.lastRewardTime,
@@ -218,25 +205,22 @@ contract ShareRewardPool is ReentrancyGuard {
         }
 
         uint256 tokenSupply = pool.totalStaked;
-        if (tokenSupply == 0) {
+        if (
+            tokenSupply == 0 ||
+            totalAllocPoint == 0 ||
+            pool.allocPoint == 0
+        ) {
             pool.lastRewardTime = block.timestamp;
             return;
         }
 
-        if (!pool.isStarted) {
-            pool.isStarted = true;
-            totalAllocPoint += pool.allocPoint;
-        }
-
-        if (totalAllocPoint > 0) {
-            uint256 generatedReward = getGeneratedReward(
-                pool.lastRewardTime,
-                block.timestamp
-            );
-            uint256 shareReward =
-                (generatedReward * pool.allocPoint) / totalAllocPoint;
-            pool.accSharePerShare += (shareReward * 1e18) / tokenSupply;
-        }
+        uint256 generatedReward = getGeneratedReward(
+            pool.lastRewardTime,
+            block.timestamp
+        );
+        uint256 shareReward =
+            (generatedReward * pool.allocPoint) / totalAllocPoint;
+        pool.accSharePerShare += (shareReward * 1e18) / tokenSupply;
 
         pool.lastRewardTime = block.timestamp;
     }

@@ -264,7 +264,11 @@ rebasing/sender-tax tokens carry the accounting risks noted in the review.
 Native PLS is not an ERC20 staking token; use WPLS. SHARE cannot be a Farm stake
 token, and PEG cannot be a Genesis stake token.
 
-The scripts checkpoint rewards and require `lastRewardTime` omitted or zero.
+The contracts always checkpoint existing pools before adding another pool.
+`lastRewardTime` is not configurable. Add a pool with `allocPoint: "0"` to let
+users predeposit without earning rewards, then rerun the configuration with a
+positive allocation to activate it. Setting the allocation back to zero stops
+future rewards without blocking withdrawals.
 Matching tokens are updated rather than duplicated. Unlisted existing pools
 are not removed or zeroed. Multi-pool allocation changes are separate
 transactions, not an atomic switch.

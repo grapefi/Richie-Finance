@@ -83,8 +83,11 @@ Run these commands from the repository root. They select PulseChain mainnet.
    SHARE cannot be a farm stake token; PEG cannot be a Genesis stake token.
    Matching tokens are updated instead of added twice. Unlisted pools are
    NOT removed or set to zero. Allocation strings avoid precision loss.
-   These scripts always checkpoint rewards when adding pools and require
-   `lastRewardTime` omitted or zero, avoiding delayed-activation accounting.
+   The contracts always checkpoint rewards before adding pools and reject the
+   obsolete `lastRewardTime` configuration. Use `allocPoint: "0"` to list an
+   inactive pool and allow predeposits, then rerun the configuration with a
+   positive allocation to activate it. Set the allocation back to zero to stop
+   future rewards; withdrawals remain available.
    Multi-pool allocation updates use separate transactions, not an atomic switch.
 
 6. Fund rewards and connect the core system:

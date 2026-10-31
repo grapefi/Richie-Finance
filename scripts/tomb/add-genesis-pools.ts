@@ -5,7 +5,6 @@ type PoolConfig = {
   token: string;
   allocPoint: string | number;
   depositFeeBps?: number;
-  lastRewardTime?: string | number;
 };
 
 // Only use this for the generated poolInfo array getter, whose bounds revert
@@ -32,7 +31,7 @@ export async function main(ctx?: Context) {
     if (seen.has(pool.token) || pool.token === getAddress(await genesis.peg())) throw new Error("Duplicate pool or PEG staking pool");
     seen.add(pool.token);
     jsonUint(pool.allocPoint, "allocPoint");
-    if (jsonUint(pool.lastRewardTime ?? 0, "lastRewardTime") !== 0n) throw new Error("Use lastRewardTime=0 for consistent allocation accounting");
+    if ("lastRewardTime" in pool) throw new Error("lastRewardTime is no longer supported; use allocPoint=0 for an inactive pool");
     if (!Number.isInteger(pool.depositFeeBps ?? 0) || (pool.depositFeeBps ?? 0) < 0 || (pool.depositFeeBps ?? 0) > 100) throw new Error("Deposit fee must be 0–100 basis points");
     await code(ctx, pool.token);
   }
@@ -55,7 +54,6 @@ export async function main(ctx?: Context) {
     }
 
     const allocPoint = jsonUint(pool.allocPoint, "allocPoint");
-    const lastRewardTime = 0n;
     const depositFeeBps = pool.depositFeeBps ?? 0;
 
     if (depositFeeBps < 0 || depositFeeBps > 100) {
@@ -67,13 +65,13 @@ export async function main(ctx?: Context) {
     );
     const pid = existing.get(pool.token);
     if (pid === undefined) {
-      const estimatedGas = await genesis.add.estimateGas(allocPoint, pool.token, true, lastRewardTime, depositFeeBps);
+      const estimatedGas = await genesis.add.estimateGas(allocPoint, pool.token, depositFeeBps);
       // Reward updates can cost more in the mined block than in the estimation block.
-      // Round up and keep withUpdate=true so existing rewards are accounted for.
+      // Round up; the contract always checkpoints existing pools before adding.
       const gasLimit = (estimatedGas * 150n + 99n) / 100n;
       console.log(`Add pool gas: estimated=${estimatedGas}, limit=${gasLimit} (50% margin)`);
       await send("Add Genesis pool", () => genesis.add(
-        allocPoint, pool.token, true, lastRewardTime, depositFeeBps, { gasLimit },
+        allocPoint, pool.token, depositFeeBps, { gasLimit },
       ));
     }
     else {

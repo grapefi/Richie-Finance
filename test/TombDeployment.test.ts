@@ -80,7 +80,7 @@ describe("Tomb deployment and configuration scripts", () => {
       process.env.TOMB_GENESIS_POOLS = pools;
       process.env.TOMB_FARM_POOLS = pools;
       process.env.TOMB_GENESIS_POOLS = JSON.stringify([{ token: await token.getAddress(), allocPoint: "100", lastRewardTime: String(start + 1n) }]);
-      await expect(genesisPools(ctx)).to.be.rejectedWith("lastRewardTime=0");
+      await expect(genesisPools(ctx)).to.be.rejectedWith("lastRewardTime is no longer supported");
       process.env.TOMB_GENESIS_POOLS = pools;
       await genesisPools(ctx);
       await genesisPools(ctx);
