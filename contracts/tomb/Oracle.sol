@@ -622,9 +622,6 @@ contract Epoch is Operator {
         period = _period;
     }
 
-    function setEpoch(uint256 _epoch) external onlyOperator {
-        epoch = _epoch;
-    }
 }
 
 

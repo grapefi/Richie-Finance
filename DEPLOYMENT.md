@@ -98,7 +98,7 @@ TOMB_GENESIS_ADDRESS=0xDeployedGenesis
 
 The deployer initially receives **1 PEG and 1 SHARE**. Plan how to obtain and
 divide assets for liquidity, initial Boardroom staking, and rebate reserves.
-Tiny liquidity pools are easily manipulated. The later 41,000 SHARE farm
+Tiny liquidity pools are easily manipulated. The later 40,000 RICH Farm
 allocation is committed reward funding, not spare liquidity or rebate funding.
 
 ## 4. Create and fund liquidity pairs
@@ -209,6 +209,13 @@ TOMB_TREASURY_ADDRESS=0xTreasury
 
 Then deploy Farm:
 
+Set the required native-PLS fee destination before deployment. Use the intended
+PSM/reserve wallet; it must be capable of receiving native PLS.
+
+```dotenv
+TOMB_PSM_FEE_RECIPIENT=0xPsmReserveWallet
+```
+
 ```powershell
 npm run tomb:deploy:farm -- --network pulse
 ```
@@ -228,7 +235,7 @@ TOMB_GENESIS_POOLS='[{"token":"0xTokenA","allocPoint":"100","depositFeeBps":0},{
 TOMB_GENESIS_FEE_RECIPIENT=0xFeeWallet
 TOMB_FARM_POOLS='[{"token":"0xStakingToken","allocPoint":"100"}]'
 TOMB_PSM_ENABLED=false
-TOMB_PSM_FEE_BPS=1500
+TOMB_PSM_FEE_BPS=3000
 TOMB_PSM_MAX_ORACLE_AGE=7200
 TOMB_PSM_FEE_RECIPIENT=0xFeeWallet
 TOMB_MIN_CLAIM_THRESHOLD=1000000000000
@@ -239,9 +246,10 @@ In this example:
 - Token A has no Genesis deposit fee; Token B has a 1% deposit fee.
 - `100` and `50` allocations split rewards approximately two-thirds/one-third;
   these are relative weights, not percentages.
-- Deposit fees use basis points: `100 = 1%`, maximum `1000 = 10%`.
-- PSM fee `1500 = 15%` of the reward value, collected in native PLS at harvest;
+- Deposit fees use basis points: `100 = 1%`, which is the contract maximum.
+- PSM fee `3000 = 30%` of the reward value, collected in native PLS at harvest;
   it is different from the Genesis deposit fee.
+- The PSM fee cannot exceed `5000 = 50%`.
 - PSM remains disabled until its oracle has a fresh nonzero price.
 
 Run:
@@ -267,7 +275,7 @@ transactions, not an atomic switch.
 npm run tomb:configure -- --network pulse
 ```
 
-This distributes **2,400 PEG to Genesis** and **41,000 SHARE to Farm**, once per
+This distributes **40,176,000 CASH to Genesis** and **40,000 RICH to Farm**, once per
 token contract. It gives Treasury operational control of PEG, SHARE, and
 Boardroom and applies supplied optional Treasury/Boardroom settings.
 
@@ -284,6 +292,12 @@ deployment scripts always create new contracts.
 
 Optional:
 
+Choose the address that will receive redeemed CASH before deployment:
+
+```dotenv
+TOMB_REDEEM_PEG_RECIPIENT=0xCashReserveOrSink
+```
+
 ```powershell
 npm run tomb:deploy:redeem -- --network pulse
 ```
@@ -293,6 +307,7 @@ PDAI in raw 18-decimal units:
 
 ```dotenv
 TOMB_REDEEM_ADDRESS=0xPegRedeem
+TOMB_REDEEM_PEG_RECIPIENT=0xCashReserveOrSink
 TOMB_REDEEM_PDAI_RESERVE_WEI=1000000000000000000000
 ```
 
@@ -302,8 +317,10 @@ npm run tomb:configure:redeem -- --network pulse
 
 The owner must hold sufficient PDAI. The script approves and supplies only the
 shortfall to the target reserve. `0` means no funding; an unfunded contract is
-not ready to redeem. PEG/PDAI decimals must match. Received PEG goes to the
-owner rather than being burned.
+not ready to redeem. PEG/PDAI decimals must match. Received CASH goes to the
+fixed `TOMB_REDEEM_PEG_RECIPIENT` selected at deployment rather than being
+burned. The owner can retrieve PDAI reserves to an explicitly supplied address;
+the contract still has no on-chain below-peg check or per-epoch redemption cap.
 
 ## 10. Deploy the zap
 

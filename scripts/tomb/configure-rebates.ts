@@ -77,6 +77,6 @@ export async function main(ctx?: Context) {
     if (await share.balanceOf(ctx.signer.address) < amount) throw new Error("Signer has insufficient SHARE for rebate reserve");
     await send("Fund rebate SHARE reserve", () => share.transfer(rebates.getAddress(), amount));
   }
-  console.log("Rebate configuration complete; rebate funding is separate from the farm's 41,000 SHARE allocation.");
+  console.log("Rebate configuration complete; rebate funding is separate from the Farm's 40,000 RICH allocation.");
 }
 await entry(import.meta.url, () => main());

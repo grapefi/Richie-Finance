@@ -61,7 +61,8 @@ Run these commands from the repository root. They select PulseChain mainnet.
    ```
 
    Core needs PEG, SHARE, PEG oracle addresses and `TOMB_START_TIME`.
-   Farm needs SHARE and `TOMB_FARM_START_TIME` (defaults to `TOMB_START_TIME`).
+   Farm needs SHARE, `TOMB_FARM_START_TIME` (defaults to `TOMB_START_TIME`), and
+   an explicit `TOMB_PSM_FEE_RECIPIENT` capable of receiving native PLS.
 
 5. Configure pools before funding or launch:
 
@@ -77,7 +78,7 @@ Run these commands from the repository root. They select PulseChain mainnet.
    TOMB_FARM_POOLS='[{"token":"0x...","allocPoint":"100"}]'
    ```
 
-   Genesis fees use basis points: 100 = 1%, maximum 1000 = 10%.
+   Genesis fees use basis points: 100 = 1%, which is the contract maximum.
    `TOMB_GENESIS_FEE_RECIPIENT` optionally changes the fee destination.
    SHARE cannot be a farm stake token; PEG cannot be a Genesis stake token.
    Matching tokens are updated instead of added twice. Unlisted pools are
@@ -92,7 +93,7 @@ Run these commands from the repository root. They select PulseChain mainnet.
    npm run tomb:configure -- --network pulse
    ```
 
-   Sends 2,400 PEG to Genesis and 41,000 SHARE to the farm once per token
+   Sends 40,176,000 CASH to Genesis and 40,000 RICH to the Farm once per token
    contract. There is no second PEG LP-reward destination. Transfers PEG/SHARE
    and Boardroom operational control to Treasury. Treasury/Genesis/farm
    administration stays with the signer. Run as deployer before final admin
@@ -111,8 +112,8 @@ Run these commands from the repository root. They select PulseChain mainnet.
    Run regularly before SHARE becomes stale, and update PEG before Treasury
    allocations. Once SHARE has a fresh nonzero price, set
    `TOMB_PSM_ENABLED=true` and rerun farm configuration.
-   PSM collects native PLS at harvest using SHARE/WPLS pricing. Fee defaults
-   to 1,500 bps (15%), maximum 7,500. Thresholds use raw token units.
+   PSM collects native PLS at harvest using RICH/WPLS pricing. Fee defaults
+   to 3,000 bps (30%), maximum 5,000 (50%). Thresholds use raw token units.
 
 ## Optional contracts
 
@@ -125,11 +126,13 @@ npm run tomb:configure:redeem -- --network pulse
 
 Needs PEG; PDAI defaults to PulseChain
 `0x6B175474E89094C44Da98b954EedeAC495271d0F`.
+`TOMB_REDEEM_PEG_RECIPIENT` is required and receives all redeemed CASH.
 Both tokens must have matching decimals because redemption is raw-unit 1:1.
 `TOMB_REDEEM_PDAI_RESERVE_WEI` is the desired total reserve, not an amount to
 add every run. The owner must hold sufficient PDAI. Configuration approves
 and supplies only the shortfall; it does not withdraw an excess reserve.
-Zero target means no funding.
+Zero target means no funding. The owner can separately retrieve PDAI to an
+explicit recipient; the contract does not enforce a below-peg price or epoch cap.
 
 ### PEG/pDAI and SHARE/WPLS zaps
 

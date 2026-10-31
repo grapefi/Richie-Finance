@@ -5,6 +5,7 @@ export async function main(ctx?: Context) {
   ctx ??= await context();
   const peg = address("TOMB_PEG_ADDRESS");
   const pdai = address("TOMB_PDAI_ADDRESS", "0x6B175474E89094C44Da98b954EedeAC495271d0F");
+  const pegRecipient = address("TOMB_REDEEM_PEG_RECIPIENT");
   if (peg === pdai) throw new Error("PEG and PDAI must differ");
   await code(ctx, peg);
   await code(ctx, pdai);
@@ -12,6 +13,6 @@ export async function main(ctx?: Context) {
   if (await new Contract(peg, tokenABI, ctx.signer).decimals() !== await new Contract(pdai, tokenABI, ctx.signer).decimals()) {
     throw new Error("PegRedeem uses raw 1:1 amounts; PEG and PDAI decimals must match");
   }
-  return deploy(ctx, "redeem", "TOMB_REDEEM_ADDRESS", [peg, pdai]);
+  return deploy(ctx, "redeem", "TOMB_REDEEM_ADDRESS", [peg, pdai, pegRecipient]);
 }
 await entry(import.meta.url, () => main());

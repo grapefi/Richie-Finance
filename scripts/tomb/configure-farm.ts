@@ -6,12 +6,12 @@ export async function main(ctx?: Context) {
   ctx ??= await context();
   const farm = await contract(ctx, "farm", "TOMB_FARM_ADDRESS");
   await authority(ctx, farm);
-  const fee = uint("TOMB_PSM_FEE_BPS", 1500n);
+  const fee = uint("TOMB_PSM_FEE_BPS", 3000n);
   const age = uint("TOMB_PSM_MAX_ORACLE_AGE", 7200n);
   const threshold = uint("TOMB_MIN_CLAIM_THRESHOLD", 1000000000000n);
   const enabled = flag("TOMB_PSM_ENABLED");
-  const recipient = address("TOMB_PSM_FEE_RECIPIENT", ctx.signer.address);
-  if (fee > 7500n || age < 300n || age > 604800n || threshold > 10n ** 18n) throw new Error("Invalid farm fee, max oracle age, or claim threshold");
+  const recipient = address("TOMB_PSM_FEE_RECIPIENT");
+  if (fee > 5000n || age < 300n || age > 604800n || threshold > 10n ** 18n) throw new Error("Invalid farm fee, max oracle age, or claim threshold");
   const pools = process.env.TOMB_FARM_POOLS ? jsonArray<Pool>("TOMB_FARM_POOLS") : [];
   const seen = new Set<string>();
   for (const pool of pools) {

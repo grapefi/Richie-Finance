@@ -33,7 +33,7 @@ export async function main(ctx?: Context) {
     seen.add(pool.token);
     jsonUint(pool.allocPoint, "allocPoint");
     if (jsonUint(pool.lastRewardTime ?? 0, "lastRewardTime") !== 0n) throw new Error("Use lastRewardTime=0 for consistent allocation accounting");
-    if (!Number.isInteger(pool.depositFeeBps ?? 0) || (pool.depositFeeBps ?? 0) < 0 || (pool.depositFeeBps ?? 0) > 1000) throw new Error("Deposit fee must be 0–1000 basis points");
+    if (!Number.isInteger(pool.depositFeeBps ?? 0) || (pool.depositFeeBps ?? 0) < 0 || (pool.depositFeeBps ?? 0) > 100) throw new Error("Deposit fee must be 0–100 basis points");
     await code(ctx, pool.token);
   }
   const recipient = process.env.TOMB_GENESIS_FEE_RECIPIENT ? address("TOMB_GENESIS_FEE_RECIPIENT") : undefined;
@@ -58,8 +58,8 @@ export async function main(ctx?: Context) {
     const lastRewardTime = 0n;
     const depositFeeBps = pool.depositFeeBps ?? 0;
 
-    if (depositFeeBps < 0 || depositFeeBps > 1_000) {
-      throw new Error(`Pool ${index} depositFeeBps must be between 0 and 1000`);
+    if (depositFeeBps < 0 || depositFeeBps > 100) {
+      throw new Error(`Pool ${index} depositFeeBps must be between 0 and 100`);
     }
 
     console.log(

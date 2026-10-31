@@ -12,12 +12,24 @@ export async function main(ctx?: Context) {
   const treasuryAddress = await treasury.getAddress();
   const pegAddress = await peg.getAddress();
   const shareAddress = await share.getAddress();
+  const expectedGenesisRewards = 40_176_000n * 10n ** 18n;
+  const expectedFarmRewards = 40_000n * 10n ** 18n;
+  const expectedFarmDuration = 365n * 86400n;
   if (!(await treasury.initialized()) || !(await boardroom.initialized())) throw new Error("Initialize Treasury and Boardroom with deploy-core.ts first");
   if (getAddress(await genesis.peg()) !== pegAddress || getAddress(await farm.share()) !== shareAddress ||
       getAddress(await treasury.peg()) !== pegAddress || getAddress(await treasury.share()) !== shareAddress ||
       getAddress(await treasury.boardroom()) !== await boardroom.getAddress() ||
       getAddress(await boardroom.peg()) !== pegAddress || getAddress(await boardroom.share()) !== shareAddress ||
       getAddress(await boardroom.treasury()) !== treasuryAddress) throw new Error("Core contract links do not match the configured addresses");
+  if (await peg.INITIAL_GENESIS_POOL_DISTRIBUTION() !== expectedGenesisRewards ||
+      await genesis.TOTAL_REWARDS() !== expectedGenesisRewards) {
+    throw new Error("Genesis contracts must both use 40,176,000 CASH over three days");
+  }
+  if (await share.FARMING_POOL_REWARD_ALLOCATION() !== expectedFarmRewards ||
+      await farm.TOTAL_REWARDS() !== expectedFarmRewards ||
+      await farm.runningTime() !== expectedFarmDuration) {
+    throw new Error("Share and Farm contracts must both use 40,000 RICH over 365 days");
+  }
   await authority(ctx, treasury);
   if (!(await peg.rewardPoolDistributed())) await authority(ctx, peg);
   if (!(await share.rewardPoolDistributed())) await authority(ctx, share);
@@ -45,8 +57,8 @@ export async function main(ctx?: Context) {
     if (getAddress(await boardroom.operator()) === treasuryAddress) await send("Set Boardroom lockups through Treasury", () => treasury.boardroomSetLockUp(withdraw, reward));
     else await send("Set Boardroom lockups", () => boardroom.setLockUp(withdraw, reward));
   }
-  if (!(await peg.rewardPoolDistributed())) await send("Fund Genesis with 2400 PEG", () => peg.distributeReward(genesis.getAddress()));
-  if (!(await share.rewardPoolDistributed())) await send("Fund farm with 41000 SHARE", () => share.distributeReward(farm.getAddress()));
+  if (!(await peg.rewardPoolDistributed())) await send("Fund Genesis with 40,176,000 CASH", () => peg.distributeReward(genesis.getAddress()));
+  if (!(await share.rewardPoolDistributed())) await send("Fund Farm with 40,000 RICH", () => share.distributeReward(farm.getAddress()));
   if (getAddress(await boardroom.operator()) !== treasuryAddress) await send("Transfer Boardroom operator to Treasury", () => boardroom.setOperator(treasuryAddress));
   if (getAddress(await peg.operator()) !== treasuryAddress) await send("Transfer PEG operator to Treasury", () => peg.transferOperator(treasuryAddress));
   if (getAddress(await share.operator()) !== treasuryAddress) await send("Transfer SHARE operator to Treasury", () => share.transferOperator(treasuryAddress));

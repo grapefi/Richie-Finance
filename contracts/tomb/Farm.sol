@@ -17,7 +17,7 @@ contract ShareRewardPool is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant BPS = 10_000;
-    uint256 public constant MAX_PSM_FEE_BPS = 7_500;
+    uint256 public constant MAX_PSM_FEE_BPS = 5000;
     address public constant WPLS =
         0xA1077a294dDE1B09bB078844df40758a5D0f9a27;
 
@@ -41,7 +41,7 @@ contract ShareRewardPool is ReentrancyGuard {
     IPairOracle public shareOracle;
 
     bool public pegStabilityModuleFeeEnabled;
-    uint256 public pegStabilityModuleFee = 1_500;
+    uint256 public pegStabilityModuleFee = 3000;
     uint256 public minClaimThreshold = 1e12;
     uint256 public maxOracleAge = 2 hours;
     address payable public psmFeeRecipient;
@@ -54,9 +54,12 @@ contract ShareRewardPool is ReentrancyGuard {
     uint256 public poolStartTime;
     uint256 public poolEndTime;
 
-    uint256 public sharePerSecond = 0.001282532532532532 ether;
-    uint256 public runningTime = 370 days;
-    uint256 public constant TOTAL_REWARDS = 41_000 ether;
+    uint256 public constant RUNNING_TIME = 365 days;
+    uint256 public constant TOTAL_REWARDS = 40_000 ether;
+    // Informational average. Reward accounting uses cumulative pro-rata
+    // emission below so the final interval includes all rounding dust.
+    uint256 public sharePerSecond = TOTAL_REWARDS / RUNNING_TIME;
+    uint256 public runningTime = RUNNING_TIME;
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
@@ -70,15 +73,16 @@ contract ShareRewardPool is ReentrancyGuard {
     event MaxOracleAgeChanged(uint256 oldMaxAge, uint256 newMaxAge);
     event PsmFeesCollected(address indexed recipient, uint256 amount);
 
-    constructor(address _share, uint256 _poolStartTime) {
+    constructor(address _share, uint256 _poolStartTime, address payable _recipient) {
         require(_share != address(0), "ShareRewardPool: zero reward token");
+        require(_recipient != address(0), "ShareRewardPool: zero fee recipient");
         require(block.timestamp < _poolStartTime, "late");
 
         share = IERC20(_share);
         poolStartTime = _poolStartTime;
         poolEndTime = _poolStartTime + runningTime;
         operator = msg.sender;
-        psmFeeRecipient = payable(msg.sender);
+        psmFeeRecipient = _recipient;
     }
 
     modifier onlyOperator() {
@@ -153,20 +157,17 @@ contract ShareRewardPool is ReentrancyGuard {
         uint256 _toTime
     ) public view returns (uint256) {
         if (_fromTime >= _toTime) return 0;
+        return _cumulativeReward(_toTime) - _cumulativeReward(_fromTime);
+    }
 
-        if (_toTime >= poolEndTime) {
-            if (_fromTime >= poolEndTime) return 0;
-            if (_fromTime <= poolStartTime) {
-                return (poolEndTime - poolStartTime) * sharePerSecond;
-            }
-            return (poolEndTime - _fromTime) * sharePerSecond;
-        }
-
-        if (_toTime <= poolStartTime) return 0;
-        if (_fromTime <= poolStartTime) {
-            return (_toTime - poolStartTime) * sharePerSecond;
-        }
-        return (_toTime - _fromTime) * sharePerSecond;
+    function _cumulativeReward(uint256 timestamp) internal view returns (uint256) {
+        if (timestamp <= poolStartTime) return 0;
+        if (timestamp >= poolEndTime) return TOTAL_REWARDS;
+        return Math.mulDiv(
+            timestamp - poolStartTime,
+            TOTAL_REWARDS,
+            RUNNING_TIME
+        );
     }
 
     function pendingShare(uint256 _pid, address _user) public view returns (uint256) {

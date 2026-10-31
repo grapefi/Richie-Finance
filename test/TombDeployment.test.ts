@@ -42,7 +42,7 @@ describe("Tomb deployment and configuration scripts", () => {
       Object.assign(process.env, {
         TOMB_PEG_ADDRESS: await peg.getAddress(), TOMB_SHARE_ADDRESS: await share.getAddress(),
         TOMB_GENESIS_ADDRESS: await genesis.getAddress(), TOMB_TREASURY_ADDRESS: await treasury.getAddress(),
-        TOMB_BOARDROOM_ADDRESS: await boardroom.getAddress(),
+        TOMB_BOARDROOM_ADDRESS: await boardroom.getAddress(), TOMB_PSM_FEE_RECIPIENT: admin.address,
       });
       const pair = await ethers.deployContract("TombScriptPair", [await share.getAddress(), "0xA1077a294dDE1B09bB078844df40758a5D0f9a27"]);
       process.env.TOMB_SHARE_PAIR_ADDRESS = await pair.getAddress();
@@ -72,6 +72,10 @@ describe("Tomb deployment and configuration scripts", () => {
       await boardroom.initialize(await peg.getAddress(), await share.getAddress(), await treasury.getAddress());
       const farm = await deployFarm(ctx);
       process.env.TOMB_FARM_ADDRESS = await farm.getAddress();
+      expect(await farm.psmFeeRecipient()).to.equal(admin.address);
+      expect(await farm.TOTAL_REWARDS()).to.equal(ethers.parseEther("40000"));
+      expect(await farm.runningTime()).to.equal(365n * 86400n);
+      expect(await farm.getGeneratedReward(start, start + 365n * 86400n)).to.equal(ethers.parseEther("40000"));
       const pools = JSON.stringify([{ token: await token.getAddress(), allocPoint: "100", depositFeeBps: 100 }]);
       process.env.TOMB_GENESIS_POOLS = pools;
       process.env.TOMB_FARM_POOLS = pools;
@@ -87,8 +91,8 @@ describe("Tomb deployment and configuration scripts", () => {
       expect(await farm.poolLength()).to.equal(1n);
       await configureSystem(ctx);
       await configureSystem(ctx);
-      expect(await peg.balanceOf(await genesis.getAddress())).to.equal(ethers.parseEther("2400"));
-      expect(await share.balanceOf(await farm.getAddress())).to.equal(ethers.parseEther("41000"));
+      expect(await peg.balanceOf(await genesis.getAddress())).to.equal(ethers.parseEther("40176000"));
+      expect(await share.balanceOf(await farm.getAddress())).to.equal(ethers.parseEther("40000"));
       expect(await peg.operator()).to.equal(await treasury.getAddress());
       expect(await boardroom.operator()).to.equal(await treasury.getAddress());
       await networkHelpers.time.increase(3601);
@@ -97,8 +101,10 @@ describe("Tomb deployment and configuration scripts", () => {
       await configureFarm(ctx);
       expect(await farm.pegStabilityModuleFeeEnabled()).to.equal(true);
       process.env.TOMB_PDAI_ADDRESS = await token.getAddress();
+      process.env.TOMB_REDEEM_PEG_RECIPIENT = admin.address;
       const redeem = await deployRedeem(ctx);
       process.env.TOMB_REDEEM_ADDRESS = await redeem.getAddress();
+      expect(await redeem.pegRecipient()).to.equal(admin.address);
       process.env.TOMB_REDEEM_PDAI_RESERVE_WEI = "1000";
       await token.mint(signer.address, 1000);
       await configureRedeem(ctx);
