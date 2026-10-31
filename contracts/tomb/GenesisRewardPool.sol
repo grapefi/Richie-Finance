@@ -238,6 +238,7 @@ contract GenesisRewardPool is ReentrancyGuard {
             uint256 pending =
                 (user.amount * pool.accPegPerShare) / 1e18 - user.rewardDebt;
             if (pending > 0) {
+                require(peg.balanceOf(address(this)) >= pending, "GenesisPool: insufficient CASH rewards");
                 safePegTransfer(sender, pending);
                 emit RewardPaid(sender, pending);
             }
@@ -252,7 +253,9 @@ contract GenesisRewardPool is ReentrancyGuard {
             uint256 credited = received - fee;
 
             if (fee > 0) {
+                uint256 feeBalanceBefore = pool.token.balanceOf(address(this));
                 pool.token.safeTransfer(feeRecipient, fee);
+                require(feeBalanceBefore - pool.token.balanceOf(address(this)) == fee, "GenesisPool: unsupported token");
                 emit DepositFee(sender, _pid, fee);
             }
 
@@ -275,6 +278,7 @@ contract GenesisRewardPool is ReentrancyGuard {
         uint256 pending =
             (user.amount * pool.accPegPerShare) / 1e18 - user.rewardDebt;
         if (pending > 0) {
+            require(peg.balanceOf(address(this)) >= pending, "GenesisPool: insufficient CASH rewards");
             safePegTransfer(sender, pending);
             emit RewardPaid(sender, pending);
         }
@@ -282,7 +286,9 @@ contract GenesisRewardPool is ReentrancyGuard {
         if (_amount > 0) {
             user.amount -= _amount;
             pool.totalStaked -= _amount;
+            uint256 beforeBalance = pool.token.balanceOf(address(this));
             pool.token.safeTransfer(sender, _amount);
+            require(beforeBalance - pool.token.balanceOf(address(this)) == _amount, "GenesisPool: unsupported token");
         }
 
         user.rewardDebt = (user.amount * pool.accPegPerShare) / 1e18;
@@ -297,16 +303,17 @@ contract GenesisRewardPool is ReentrancyGuard {
         user.amount = 0;
         user.rewardDebt = 0;
         pool.totalStaked -= amount;
+        uint256 beforeBalance = pool.token.balanceOf(address(this));
         pool.token.safeTransfer(msg.sender, amount);
+        require(beforeBalance - pool.token.balanceOf(address(this)) == amount, "GenesisPool: unsupported token");
 
         emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
 
     function safePegTransfer(address _to, uint256 _amount) internal {
         uint256 pegBalance = peg.balanceOf(address(this));
-        if (pegBalance > 0) {
-            peg.safeTransfer(_to, _amount > pegBalance ? pegBalance : _amount);
-        }
+        require(pegBalance >= _amount, "GenesisPool: insufficient CASH rewards");
+        peg.safeTransfer(_to, _amount);
     }
 
     function setOperator(address _operator) external onlyOperator {

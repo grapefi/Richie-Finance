@@ -157,22 +157,21 @@ npm run tomb:deploy:rebates -- --network pulse
 npm run tomb:configure:rebates -- --network pulse
 ```
 
-Accepts bridged **USD Coin from Ethereum** at
-`0x15D38573d2feeb82e7ad5187aB8c1D52810B1f07` (6 decimals), NOT the forked
-Ethereum-address USDC copy. USDC is enabled automatically at deployment.
-Prices are denominated in USDC, not a guarantee that bridged USDC always trades
-at $1. Bridge/custody/depeg risks remain.
+Uses official PulseChain **DAI** at
+`0xefD766cCb38EaF1dfd701853BFCe31359239F305` (18 decimals) as the quote asset.
+DAI is enabled automatically at deployment. Prices are denominated in DAI, not
+a guarantee that DAI always trades at $1; market and depeg risks remain.
 
 Preferred: reuse `TOMB_SHARE_ORACLE_ADDRESS` (RICH/WPLS) and
-`TOMB_REBATE_PLS_ORACLE_ADDRESS` (WPLS/bridged USDC). Deploy the latter with
-`tomb:deploy:rebate-pls-oracle` first if necessary. No RICH/USDC LP is required.
+`TOMB_REBATE_PLS_ORACLE_ADDRESS` (WPLS/official DAI). Deploy the latter with
+`tomb:deploy:rebate-pls-oracle` first if necessary. No RICH/DAI LP is required.
 Run `tomb:deploy:rebate-composite-oracle`, then save both printed variables:
 `TOMB_REBATE_COMPOSITE_ORACLE_ADDRESS` and `TOMB_REBATE_SHARE_ORACLE_ADDRESS`
 to the same adapter address. The adapter uses Solidity 0.8.20; both source
 oracles keep the existing Solidity 0.6 Oracle contract unchanged.
 Update both sources with `npm run tomb:update:rebate-oracles -- --network pulse`
 after full observation windows. Use comparable source periods; the cross-price
-is a product of stored TWAPs, not an exact direct RICH/USDC TWAP. Both pools
+is a product of stored TWAPs, not an exact direct RICH/DAI TWAP. Both pools
 still need sufficient liquidity. The oldest timestamp is reported and both
 sources must be fresh/nonzero; no spot-price fallback is used.
 The adapter does not repair the existing Oracle.sol short-window update finding:
@@ -185,16 +184,16 @@ address, including for an existing compatible treasury, without moving reserves
 or altering vesting obligations. Set both adapter env variables so the final
 administration-transfer script skips the ownerless adapter.
 
-Legacy direct-pair alternative only: create and seed a SHARE/bridged-USDC pair. Set
+Legacy direct-pair alternative only: create and seed a SHARE/official-DAI pair. Set
 `TOMB_REBATE_SHARE_PAIR_ADDRESS`, `TOMB_REBATE_ORACLE_PERIOD` (default 3,600
 seconds), and `TOMB_REBATE_ORACLE_START_TIME` (current Unix time). Deploy the
 direct rebate oracle with `tomb:deploy:rebate-oracle` and save its printed `TOMB_REBATE_SHARE_ORACLE_ADDRESS`.
 This MUST be separate from the farm's SHARE/WPLS oracle. Update it with
 `tomb:update:oracles` after a full observation period before accepting deposits.
 
-Rebate deployment needs SHARE, Treasury, the rebate oracle, and the bridged
-USDC contract already present on the target network. SHARE must have 18
-decimals. Oracle prices must be nonzero and no older than
+Rebate deployment needs SHARE, Treasury, the rebate oracle, and official DAI
+already present on the target network. SHARE and DAI must have 18 decimals.
+Oracle prices must be nonzero and no older than
 `TOMB_REBATE_MAX_ORACLE_AGE` (default 86,400 seconds). Keep the update period
 no longer than that age and maintain regular updates. This remaining contract
 still exposes bond/vesting features; core scripts do not deploy it automatically.
@@ -204,30 +203,34 @@ are not upgradeable. Finish old vesting obligations before moving reserves.
 Optional `TOMB_REBATE_ASSETS` example:
 
 ```dotenv
-TOMB_REBATE_ASSETS='[{"token":"0x15D38573d2feeb82e7ad5187aB8c1D52810B1f07","multiplier":"1000000"}]'
+TOMB_REBATE_ASSETS='[{"token":"0x6B175474E89094C44Da98b954EedeAC495271d0F","multiplier":"1000000","oracle":"0xPdaiDaiOracle"}]'
 ```
 
 Multiplier precision is 1e6. Discount defaults to 70,000 (7% with a 1e6
-denominator), vesting to 259,200 seconds. `TOMB_REBATE_SHARE_RESERVE_WEI` is
+denominator) and is capped at 500,000 (50%). Vesting defaults to 259,200 seconds.
+`TOMB_REBATE_SHARE_RESERVE_WEI` is
 a target reserve funded from the owner's existing SHARE, separate from farm
-rewards. Direct USDC does not need an asset oracle: its value is measured in
-USDC itself. Other non-LP assets require token/USDC price oracles.
-Enabled LP assets remain rejected by the configuration script: LP reserve-based
-pricing needs separate manipulation-risk review before enabling it. The contract
-now uses USDC rather than Avalanche MIM for that legacy path. Configuration is
-not an audit or approval of rebate economics.
+rewards. Direct official DAI does not need an asset oracle: its value is measured
+in DAI itself. pDAI and other non-LP assets require direct token/DAI price oracles.
+The contract reads each configured token's decimals and normalizes the quote;
+tokens with more than 36 decimals are rejected.
+LP assets and LP reserve-based pricing have been removed from the contract and
+are rejected by the configuration script. Configuration is not an audit or
+approval of rebate economics.
 
-At 2 USDC per SHARE, a 100 USDC deposit (`100000000` raw units) with default
+At 2 DAI per SHARE, a 100 DAI deposit (`100e18` raw units) with default
 7% bonus/multiplier 1 yields 53.5 SHARE, vested over three days.
 The existing `bond(token, amount)` and `claimRewards()` interfaces are retained.
-An owner can pause new USDC deposits with
-`setAsset(USDC, false, 1000000, address(0), false, address(0))`; claims continue.
+An owner can pause new DAI deposits with
+`setAsset(DAI, false, 1000000, address(0))`; claims continue. Emergency SHARE
+withdrawals are limited to the contract balance above `totalVested`.
 
 #### Optional native PLS rebates
 
-PLS deposits use a **WPLS/bridged-USDC** TWAP oracle in addition to the existing
-SHARE/USDC oracle. The farm's SHARE/WPLS oracle is not suitable for this quote.
-Create/seed a WPLS/USDC pair and set:
+PLS deposits use a **WPLS/official-DAI** TWAP oracle. The composite adapter
+combines it with the existing SHARE/WPLS oracle. Both WPLS and DAI use 18
+decimals, avoiding the former six-decimal USDC conversion. Create/seed a
+WPLS/DAI pair and set:
 
 ```dotenv
 TOMB_REBATE_PLS_PAIR_ADDRESS=0x...
@@ -267,10 +270,11 @@ no wrapping or swap occurs. ERC20 WPLS can also be approved and deposited throug
 `bond(WPLS, amount)`. The owner recovers native reserves with `withdrawPLS(amount)`;
 ERC20 reserves still use their existing withdrawal/buyback functions.
 
-PLS and USDC deposits share the same per-user vesting schedule. A new deposit
+PLS, DAI, pDAI, and other configured-token deposits share the same per-user
+vesting schedule. A new deposit
 first claims available rewards, then restarts vesting for the remaining balance
-plus the new reward (the existing top-up behavior). At 0.0001 USDC per PLS and
-2 USDC per SHARE, 100 PLS yields 0.00535 SHARE with the default 7% bonus.
+plus the new reward (the existing top-up behavior). At 0.0001 DAI per PLS and
+2 DAI per SHARE, 100 PLS yields 0.00535 SHARE with the default 7% bonus.
 PLS is disabled by default until its WPLS asset/oracle is configured. Redeploy
 RebateTreasury if you already deployed a version without `bondPLS`.
 

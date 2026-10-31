@@ -34,14 +34,12 @@ export async function main(ctx?: Context) {
   if (funds && (funds[1] > 2500n || funds[3] > 500n)) throw new Error("DAO/dev fund shares exceed Treasury limits");
   const ceiling = uint("TOMB_PEG_PRICE_CEILING", await treasury.pegPriceCeiling());
   const one = await treasury.pegPriceOne();
-  const expansion = uint("TOMB_MAX_SUPPLY_EXPANSION_BPS", await treasury.maxSupplyExpansionPercent());
   const bootstrapEpochs = uint("TOMB_BOOTSTRAP_EPOCHS", await treasury.bootstrapEpochs());
   const bootstrapExpansion = uint("TOMB_BOOTSTRAP_EXPANSION_BPS", await treasury.bootstrapSupplyExpansionPercent());
-  if (ceiling < one || ceiling > one * 120n / 100n || expansion < 10n || expansion > 1000n || bootstrapEpochs > 120n || bootstrapExpansion < 100n || bootstrapExpansion > 1000n) throw new Error("Treasury parameters exceed contract limits");
+  if (ceiling < one || ceiling > one * 120n / 100n || bootstrapEpochs > 120n || bootstrapExpansion < 100n || bootstrapExpansion > 1000n) throw new Error("Treasury parameters exceed contract limits");
 
   if (funds && (getAddress(await treasury.daoFund()) !== funds[0] || await treasury.daoFundSharedPercent() !== funds[1] || getAddress(await treasury.devFund()) !== funds[2] || await treasury.devFundSharedPercent() !== funds[3])) await send("Set Treasury funds", () => treasury.setExtraFunds(...funds));
   if (ceiling !== await treasury.pegPriceCeiling()) await send("Set PEG price ceiling", () => treasury.setPegPriceCeiling(ceiling));
-  if (expansion !== await treasury.maxSupplyExpansionPercent()) await send("Set expansion limit", () => treasury.setMaxSupplyExpansionPercents(expansion));
   if (bootstrapEpochs !== await treasury.bootstrapEpochs() || bootstrapExpansion !== await treasury.bootstrapSupplyExpansionPercent()) await send("Set bootstrap parameters", () => treasury.setBootstrap(bootstrapEpochs, bootstrapExpansion));
   if (withdraw !== await boardroom.withdrawLockupEpochs() || reward !== await boardroom.rewardLockupEpochs()) {
     if (getAddress(await boardroom.operator()) === treasuryAddress) await send("Set Boardroom lockups through Treasury", () => treasury.boardroomSetLockUp(withdraw, reward));

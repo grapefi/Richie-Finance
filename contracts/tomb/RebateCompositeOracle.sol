@@ -11,25 +11,25 @@ interface IRebateSourceOracle {
     function update() external;
 }
 
-/// @notice Stored cross-TWAP quote RICH -> WPLS -> bridged USDC, not a direct-pair TWAP.
+/// @notice Stored cross-TWAP quote RICH -> WPLS -> official DAI, not a direct-pair TWAP.
 /// @dev Immutable wiring: deploy a new adapter to change sources or its age limit.
 contract RebateCompositeOracle {
     address public constant WPLS = 0xA1077a294dDE1B09bB078844df40758a5D0f9a27;
-    address public constant USDC = 0x15D38573d2feeb82e7ad5187aB8c1D52810B1f07;
+    address public constant DAI = 0xefD766cCb38EaF1dfd701853BFCe31359239F305;
     address public immutable token0;
-    address public constant token1 = USDC;
+    address public constant token1 = DAI;
     IRebateSourceOracle public immutable sharePlsOracle;
-    IRebateSourceOracle public immutable plsUsdcOracle;
+    IRebateSourceOracle public immutable plsDaiOracle;
     uint256 public immutable maxOracleAge;
 
     constructor(address share, address shareOracle, address plsOracle, uint256 age) {
-        require(share != address(0) && share != WPLS && share != USDC, "Composite: invalid share");
+        require(share != address(0) && share != WPLS && share != DAI, "Composite: invalid share");
         require(age >= 300 && age <= 7 days, "Composite: invalid age");
         _validatePair(shareOracle, share, WPLS);
-        _validatePair(plsOracle, WPLS, USDC);
+        _validatePair(plsOracle, WPLS, DAI);
         token0 = share;
         sharePlsOracle = IRebateSourceOracle(shareOracle);
-        plsUsdcOracle = IRebateSourceOracle(plsOracle);
+        plsDaiOracle = IRebateSourceOracle(plsOracle);
         maxOracleAge = age;
         require(getPeriod() <= age, "Composite: period exceeds age");
     }
@@ -44,19 +44,19 @@ contract RebateCompositeOracle {
     /// @notice Oldest source timestamp; refreshing one leg cannot mask the other.
     function blockTimestampLast() external view returns (uint32) {
         uint32 a = sharePlsOracle.blockTimestampLast();
-        uint32 b = plsUsdcOracle.blockTimestampLast();
+        uint32 b = plsDaiOracle.blockTimestampLast();
         return a < b ? a : b;
     }
 
     function getPeriod() public view returns (uint256) {
         uint256 a = sharePlsOracle.getPeriod();
-        uint256 b = plsUsdcOracle.getPeriod();
+        uint256 b = plsDaiOracle.getPeriod();
         return a > b ? a : b;
     }
 
     function nextEpochPoint() external view returns (uint256) {
         uint256 a = sharePlsOracle.nextEpochPoint();
-        uint256 b = plsUsdcOracle.nextEpochPoint();
+        uint256 b = plsDaiOracle.nextEpochPoint();
         return a > b ? a : b;
     }
 
@@ -67,19 +67,19 @@ contract RebateCompositeOracle {
         require(oracle.getPeriod() <= maxOracleAge, "Composite: period exceeds age");
     }
 
-    /// @notice Raw token input/output units. 1e18 RICH returns 6-decimal USDC units.
+    /// @notice Raw token input/output units. 1e18 RICH returns 18-decimal DAI units.
     function consult(address token, uint256 amount) public view returns (uint144) {
-        require(token == token0 || token == USDC, "Composite: invalid token");
+        require(token == token0 || token == DAI, "Composite: invalid token");
         _fresh(sharePlsOracle);
-        _fresh(plsUsdcOracle);
+        _fresh(plsDaiOracle);
         if (amount == 0) return 0;
         uint144 intermediate;
         uint144 result;
         if (token == token0) {
             intermediate = sharePlsOracle.consult(token0, amount);
-            result = plsUsdcOracle.consult(WPLS, intermediate);
+            result = plsDaiOracle.consult(WPLS, intermediate);
         } else {
-            intermediate = plsUsdcOracle.consult(USDC, amount);
+            intermediate = plsDaiOracle.consult(DAI, amount);
             result = sharePlsOracle.consult(WPLS, intermediate);
         }
         require(intermediate > 0 && result > 0, "Composite: zero quote");
@@ -95,7 +95,7 @@ contract RebateCompositeOracle {
     /// Source errors propagate rather than silently retaining an unsuccessful update.
     function update() external {
         _update(sharePlsOracle);
-        _update(plsUsdcOracle);
+        _update(plsDaiOracle);
     }
 
     function _update(IRebateSourceOracle oracle) private {

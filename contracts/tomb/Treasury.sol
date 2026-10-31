@@ -43,6 +43,8 @@ interface IBasisAsset {
 interface IOracle {
     function update() external;
 
+    function blockTimestampLast() external view returns (uint32);
+
     function consult(
         address token,
         uint256 amountIn
@@ -129,8 +131,6 @@ contract Treasury is ContractGuard {
 
     uint256[] public supplyTiers;
     uint256[] public maxExpansionTiers;
-
-    uint256 public maxSupplyExpansionPercent;
 
     uint256 public bootstrapEpochs;
     uint256 public bootstrapSupplyExpansionPercent;
@@ -254,26 +254,14 @@ contract Treasury is ContractGuard {
         pegPriceCeiling = Math.mulDiv(pegPriceOne, 101, 100);
 
         supplyTiers.push(0 ether);
-        supplyTiers.push(10_000 ether);
-        supplyTiers.push(15_000 ether);
-        supplyTiers.push(25_000 ether);
-        supplyTiers.push(35_000 ether);
-        supplyTiers.push(60_000 ether);
-        supplyTiers.push(250_000 ether);
-        supplyTiers.push(500_000 ether);
-        supplyTiers.push(1_000_000 ether);
+        supplyTiers.push(100_000_000 ether);
+        supplyTiers.push(250_000_000 ether);
+        supplyTiers.push(500_000_000 ether);
 
-        maxExpansionTiers.push(450);
-        maxExpansionTiers.push(400);
-        maxExpansionTiers.push(350);
-        maxExpansionTiers.push(300);
-        maxExpansionTiers.push(250);
         maxExpansionTiers.push(200);
-        maxExpansionTiers.push(150);
-        maxExpansionTiers.push(125);
         maxExpansionTiers.push(100);
-
-        maxSupplyExpansionPercent = 400;
+        maxExpansionTiers.push(50);
+        maxExpansionTiers.push(25);
 
         bootstrapEpochs = 28;
         bootstrapSupplyExpansionPercent = 250;
@@ -286,11 +274,6 @@ contract Treasury is ContractGuard {
     function setOperator(address newOperator) external onlyOperator {
         require(newOperator != address(0), "Treasury: zero operator address");
         operator = newOperator;
-    }
-
-    function setBoardroom(address newBoardroom) external onlyOperator {
-        require(newBoardroom != address(0), "Treasury: zero boardroom address");
-        boardroom = newBoardroom;
     }
 
     function setPegOracle(address newOracle) external onlyOperator {
@@ -307,17 +290,6 @@ contract Treasury is ContractGuard {
             "out of range"
         );
         pegPriceCeiling = newPriceCeiling;
-    }
-
-    function setMaxSupplyExpansionPercents(
-        uint256 newMaxExpansionPercent
-    ) external onlyOperator {
-        require(
-            newMaxExpansionPercent >= 10 &&
-                newMaxExpansionPercent <= 1_000,
-            "_maxSupplyExpansionPercent: out of range"
-        );
-        maxSupplyExpansionPercent = newMaxExpansionPercent;
     }
 
     function setSupplyTiersEntry(
@@ -382,7 +354,7 @@ contract Treasury is ContractGuard {
     }
 
     function _updatePegPrice() internal {
-        try IOracle(pegOracle).update() {} catch {}
+        IOracle(pegOracle).update();
     }
 
     function getPegCirculatingSupply() public view returns (uint256) {
@@ -435,20 +407,19 @@ contract Treasury is ContractGuard {
         emit BoardroomFunded(block.timestamp, amount);
     }
 
-    function _calculateMaxSupplyExpansionPercent(
+    function _getMaxSupplyExpansionPercent(
         uint256 pegSupply
-    ) internal returns (uint256) {
+    ) internal view returns (uint256) {
         uint256 tierId = supplyTiers.length;
         while (tierId > 0) {
             unchecked {
                 --tierId;
             }
             if (pegSupply >= supplyTiers[tierId]) {
-                maxSupplyExpansionPercent = maxExpansionTiers[tierId];
-                break;
+                return maxExpansionTiers[tierId];
             }
         }
-        return maxSupplyExpansionPercent;
+        revert("Treasury: no expansion tier");
     }
 
     function allocateSeigniorage()
@@ -460,6 +431,11 @@ contract Treasury is ContractGuard {
         checkOperator
     {
         _updatePegPrice();
+        uint256 oracleUpdated = IOracle(pegOracle).blockTimestampLast();
+        require(
+            oracleUpdated <= block.timestamp && block.timestamp - oracleUpdated <= PERIOD,
+            "Treasury: stale oracle"
+        );
         previousEpochPegPrice = getPegPrice();
         uint256 pegSupply = getPegCirculatingSupply();
 
@@ -474,7 +450,7 @@ contract Treasury is ContractGuard {
         } else if (previousEpochPegPrice > pegPriceCeiling) {
             uint256 percentage = previousEpochPegPrice - pegPriceOne;
             uint256 maxExpansion =
-                _calculateMaxSupplyExpansionPercent(pegSupply) * 1e14;
+                _getMaxSupplyExpansionPercent(pegSupply) * 1e14;
 
             if (percentage > maxExpansion) {
                 percentage = maxExpansion;

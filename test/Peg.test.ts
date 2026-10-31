@@ -50,9 +50,9 @@ describe("Peg.sol", () => {
     });
 
     describe("distribute reward", () => {
-        it("distributes 2400 PEG once when called by the operator", async () => {
+        it("distributes 40176000 PEG once when called by the operator", async () => {
             const { peg, operator, receiver } = await networkHelpers.loadFixture(deployContracts);
-            const amount = ethers.parseEther("2400");
+            const amount = ethers.parseEther("40176000");
 
             expect(await peg.rewardPoolDistributed()).to.equal(false);
             await expect(peg.connect(operator).distributeReward(receiver.address))

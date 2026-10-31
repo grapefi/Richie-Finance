@@ -587,12 +587,9 @@ contract Epoch is Operator {
         } else {
             _;
 
-            for (;;) {
-                lastEpochTime = _nextEpochPoint;
-                ++epoch;
-                _nextEpochPoint = nextEpochPoint();
-                if (now < _nextEpochPoint) break;
-            }
+            uint256 skipped = now.sub(_nextEpochPoint).div(period).add(1);
+            lastEpochTime = _nextEpochPoint.add(skipped.sub(1).mul(period));
+            epoch = epoch.add(skipped);
         }
     }
 
@@ -676,11 +673,7 @@ contract Oracle is Epoch {
         (uint256 price0Cumulative, uint256 price1Cumulative, uint32 blockTimestamp) = UniswapV2OracleLibrary.currentCumulativePrices(address(pair));
         uint32 timeElapsed = blockTimestamp - blockTimestampLast; // overflow is desired
 
-        if (timeElapsed == 0) {
-            // prevent divided by zero
-            return;
-        }
-
+        require(timeElapsed >= getPeriod(), "Oracle: PERIOD_NOT_ELAPSED");
         // overflow is desired, casting never truncates
         // cumulative price is in (uq112x112 price * seconds) units so we simply wrap it after division by time elapsed
         price0Average = FixedPoint.uq112x112(uint224((price0Cumulative - price0CumulativeLast) / timeElapsed));

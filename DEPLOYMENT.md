@@ -20,7 +20,7 @@ oracle operation, and contract verification. Commands below use PowerShell from
 - [8. Fund and connect the core](#8-fund-and-connect-the-core)
 - [9. Deploy PEG redemption](#9-deploy-peg-redemption)
 - [10. Deploy the zap](#10-deploy-the-zap)
-- [11. Deploy USDC and PLS rebates](#11-deploy-usdc-and-pls-rebates)
+- [11. Deploy DAI, PLS, and configured-token rebates](#11-deploy-dai-pls-and-configured-token-rebates)
 - [12. Prime and maintain the oracles](#12-prime-and-maintain-the-oracles)
 - [13. Launch and operate Treasury](#13-launch-and-operate-treasury)
 - [14. Verify the contracts](#14-verify-the-contracts)
@@ -111,22 +111,23 @@ nonzero reserves. Use a **PulseX V2** PEG/PDAI pair for compatibility with the z
 | PEG/PDAI | Treasury PEG price | `TOMB_PAIR_ADDRESS` |
 | PEG/PDAI, same pair | Zap liquidity | `TOMB_PEG_PDAI_PAIR_ADDRESS` |
 | SHARE/WPLS | Farm PLS fee pricing | `TOMB_SHARE_PAIR_ADDRESS` |
-| SHARE/bridged USDC | Legacy direct rebate pricing only; NOT required with the composite oracle | `TOMB_REBATE_SHARE_PAIR_ADDRESS` |
-| WPLS/bridged USDC | Native PLS rebate pricing | `TOMB_REBATE_PLS_PAIR_ADDRESS` |
+| SHARE/official DAI | Legacy direct rebate pricing only; NOT required with the composite oracle | `TOMB_REBATE_SHARE_PAIR_ADDRESS` |
+| WPLS/official DAI | Native PLS and composite rebate pricing | `TOMB_REBATE_PLS_PAIR_ADDRESS` |
 
 The rebate pairs/oracles are only required if deploying those optional features.
-An existing suitable WPLS/USDC pair can be reused.
+An existing suitable WPLS/official-DAI pair can be reused.
 
 Token addresses used by the contracts:
 
 | Token | Address | Decimals |
 | --- | --- | --- |
 | PDAI, forked Ethereum-address DAI | `0x6B175474E89094C44Da98b954EedeAC495271d0F` | 18 |
+| Official PulseChain DAI | `0xefD766cCb38EaF1dfd701853BFCe31359239F305` | 18 |
 | WPLS | `0xA1077a294dDE1B09bB078844df40758a5D0f9a27` | 18 |
 | USD Coin from Ethereum, bridged USDC | `0x15D38573d2feeb82e7ad5187aB8c1D52810B1f07` | 6 |
 
-The bridged USDC is not the forked Ethereum-address USDC copy. USDC pricing does
-not guarantee a dollar market value; bridge/custody/depeg risks remain.
+Rebate prices use official DAI. A DAI-denominated quote does not guarantee a
+dollar market value; market and depeg risks remain.
 
 Save the actual **pair/LP contract addresses**, not router or underlying token
 addresses:
@@ -136,8 +137,8 @@ TOMB_PDAI_ADDRESS=0x6B175474E89094C44Da98b954EedeAC495271d0F
 TOMB_PAIR_ADDRESS=0xPegPdaiPair
 TOMB_PEG_PDAI_PAIR_ADDRESS=0xPegPdaiPair
 TOMB_SHARE_PAIR_ADDRESS=0xShareWplsPair
-TOMB_REBATE_SHARE_PAIR_ADDRESS=0xShareUsdcPair
-TOMB_REBATE_PLS_PAIR_ADDRESS=0xWplsUsdcPair
+TOMB_REBATE_SHARE_PAIR_ADDRESS=0xShareDaiPair
+TOMB_REBATE_PLS_PAIR_ADDRESS=0xWplsDaiPair
 ```
 
 Treasury treats the quote token as the peg unit. Use PEG/PDAI for this PDAI peg;
@@ -180,11 +181,12 @@ TOMB_ORACLE_ADDRESS=0xPegOracle
 TOMB_SHARE_ORACLE_ADDRESS=0xShareWplsOracle
 TOMB_REBATE_SHARE_ORACLE_ADDRESS=0xCompositeAdapter
 TOMB_REBATE_COMPOSITE_ORACLE_ADDRESS=0xCompositeAdapter
-TOMB_REBATE_PLS_ORACLE_ADDRESS=0xWplsUsdcOracle
+TOMB_REBATE_PLS_ORACLE_ADDRESS=0xWplsDaiOracle
 ```
 
 Do not pass the SHARE/WPLS oracle directly to rebates: its quote is WPLS.
-The composite adapter chains that oracle with WPLS/USDC to return raw USDC units.
+The composite adapter chains that oracle with WPLS/official DAI to return raw
+18-decimal DAI units.
 Save `TOMB_REBATE_PLS_ORACLE_ADDRESS` after deploying it, before deploying the adapter.
 Keep the original constructor timestamps for verification.
 
@@ -333,11 +335,11 @@ and optional Farm deposit remain separate transactions. If redeploying, update
 the matching zap address in the UI's `src/constants/contracts.ts`.
 Do not repeat this command unintentionally: it deploys new addresses.
 
-## 11. Deploy USDC and PLS rebates
+## 11. Deploy DAI, PLS, and configured-token rebates
 
-Optional; requires Treasury, SHARE, and the composite RICH -> WPLS -> USDC oracle.
-No RICH/USDC LP is needed. Reuse the farm's RICH/WPLS oracle and an existing
-WPLS/bridged-USDC oracle. Set their addresses, then deploy the adapter:
+Optional; requires Treasury, SHARE, and the composite RICH -> WPLS -> official
+DAI oracle. No RICH/DAI LP is needed. Reuse the farm's RICH/WPLS oracle and an
+existing WPLS/official-DAI oracle. Set their addresses, then deploy the adapter:
 
 ```powershell
 npm run tomb:deploy:rebate-composite-oracle -- --network pulse
@@ -365,10 +367,10 @@ This command skips sources until both their epoch and full observation window
 are due. Repeat after the printed timestamp if skipped. It leaves the general
 `tomb:update:oracles` script untouched. Use comparable observation periods and
 keep both within the adapter and treasury freshness limits. Quotes reject stale,
-future, zero-timestamp, and zero-price sources. `1e18` raw RICH returns `1e6`
-USDC units per whole USDC, with no extra decimal scaling needed. This is a
-cross-price from two stored TWAPs, not an exact direct-pair TWAP; liquidity,
-manipulation, bridge and USDC-depeg risks remain. `twap()` on the adapter is a
+future, zero-timestamp, and zero-price sources. `1e18` raw RICH returns its quote
+in raw 18-decimal official DAI units. This is a cross-price from two stored
+TWAPs, not an exact direct-pair TWAP; liquidity, manipulation, and DAI market
+risks remain. `twap()` on the adapter is a
 compatibility alias for the stored quote, not a fresh shorter-window sample.
 
 Important inherited limitation: Oracle.sol's epoch scheduling permits a caller
@@ -397,8 +399,14 @@ TOMB_REBATE_PLS_MULTIPLIER=1000000
 ```
 
 These settings mean a 7% bonus, three-day vesting, and a PLS multiplier of 1.
-Leave `TOMB_REBATE_ASSETS` blank for the default USDC setup. Leave PLS enabled
-blank/false if not configuring PLS rebates.
+The discount uses 1e6 precision and cannot exceed `500000` (50%).
+Leave `TOMB_REBATE_ASSETS` blank for the default official DAI setup. Leave PLS
+enabled blank/false if not configuring PLS rebates. To add pDAI or another ERC20,
+provide a direct token/official-DAI oracle:
+
+```dotenv
+TOMB_REBATE_ASSETS='[{"token":"0x6B175474E89094C44Da98b954EedeAC495271d0F","multiplier":"1000000","oracle":"0xPdaiDaiOracle"}]'
+```
 
 One SHARE is `1000000000000000000` raw units. Fund the rebate reserve using
 SHARE the owner actually holds, separately from Farm reward obligations.
@@ -407,14 +415,16 @@ SHARE the owner actually holds, separately from Farm reward obligations.
 npm run tomb:configure:rebates -- --network pulse
 ```
 
-USDC is enabled by the constructor; direct USDC needs no additional asset oracle.
-For an existing compatible USDC RebateTreasury, this configuration command can
-switch `ShareOracle` to the adapter using its owner-only setter. Claims, reserves
-and vesting remain in place; this is not a treasury upgrade or migration.
+Official DAI is enabled by the constructor and needs no additional asset oracle.
+pDAI and every other configured ERC20 require a direct token/official-DAI oracle.
+The contract normalizes each configured token's native decimals into the
+18-decimal DAI quote; tokens reporting more than 36 decimals are rejected.
+Deploy a new RebateTreasury when migrating from the former USDC-denominated
+version because its quote asset and constructor defaults have changed.
 
-PLS requires the WPLS/USDC oracle. Both rebate price observations must be fresh
-and nonzero before native PLS rebates work. Enabled LP rebate assets are rejected
-by the configuration script because of manipulation risk.
+PLS requires the WPLS/official-DAI oracle. Both rebate price observations must be fresh
+and nonzero before native PLS rebates work. LP rebate assets and LP reserve-based
+pricing are not supported by the contract or configuration script.
 
 Native deposits use payable `bondPLS(minShareOut)`, not a plain PLS transfer.
 ERC20 deposits use approval followed by `bond(token, amount)`. The rebate
@@ -439,8 +449,8 @@ time. For a newly seeded pair, allow approximately:
 | --- | --- |
 | PEG/PDAI | 21,600 seconds / 6 hours |
 | SHARE/WPLS | 3,600 seconds / 1 hour |
-| SHARE/USDC | 3,600 seconds / 1 hour |
-| WPLS/USDC | 3,600 seconds / 1 hour |
+| SHARE/official DAI, legacy direct alternative | 3,600 seconds / 1 hour |
+| WPLS/official DAI | 3,600 seconds / 1 hour |
 
 Run:
 

@@ -9,7 +9,7 @@ export async function main(ctx?: Context) {
   const age = uint("TOMB_REBATE_MAX_ORACLE_AGE", 86400n);
   const adapter = await deploy(ctx, "rebateComposite", "TOMB_REBATE_COMPOSITE_ORACLE_ADDRESS", [share, shareOracle, plsOracle, age]);
   console.log(`TOMB_REBATE_SHARE_ORACLE_ADDRESS=${await adapter.getAddress()}`);
-  console.log("Save BOTH printed oracle variables. No RICH/USDC LP is needed; update both underlying oracles before accepting deposits.");
+  console.log("Save BOTH printed oracle variables. No RICH/DAI LP is needed; update both underlying oracles before accepting deposits.");
   return adapter;
 }
 await entry(import.meta.url, () => main());

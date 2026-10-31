@@ -29,6 +29,7 @@ contract PegRedeem is Ownable, ReentrancyGuard {
         PDAI = _PDAI;
     }
 
+    // Redemptions are open as long as there is PDAI in the contract, redemptions are only profitable and logical when below peg
     function redeemPEG(uint256 amount) external nonReentrant {
         require(amount > 0, "PegRedeem: zero amount");
         require(

@@ -2,6 +2,7 @@ import { Contract, ZeroAddress, getAddress, isAddress } from "ethers";
 import { address, authority, code, context, contract, entry, flag, jsonArray, jsonUint, send, uint, type Context } from "./helpers.js";
 
 type Asset = { token: string; isAdded?: boolean; multiplier: string | number; oracle?: string; isLP?: boolean; pair?: string };
+const MAX_DISCOUNT = 500000n;
 export async function main(ctx?: Context) {
   ctx ??= await context();
   const rebates = await contract(ctx, "rebates", "TOMB_REBATES_ADDRESS");
@@ -10,6 +11,7 @@ export async function main(ctx?: Context) {
   const vesting = uint("TOMB_REBATE_VESTING_SECONDS", 259200n);
   const target = uint("TOMB_REBATE_SHARE_RESERVE_WEI", 0n);
   const age = uint("TOMB_REBATE_MAX_ORACLE_AGE", 86400n);
+  if (discount > MAX_DISCOUNT) throw new Error("Rebate discount cannot exceed 500000 (50%)");
   if (age < 300n || age > 604800n) throw new Error("Rebate oracle age must be 300–604800 seconds");
   const shareOracleAddress = process.env.TOMB_REBATE_SHARE_ORACLE_ADDRESS
     ? address("TOMB_REBATE_SHARE_ORACLE_ADDRESS") : getAddress(await rebates.ShareOracle());
@@ -19,8 +21,8 @@ export async function main(ctx?: Context) {
     "function token1() view returns(address)",
   ], ctx.signer);
   const shareTokens = [getAddress(await shareOracle.token0()), getAddress(await shareOracle.token1())];
-  if (!shareTokens.includes(getAddress(await rebates.Share())) || !shareTokens.includes(getAddress(await rebates.USDC()))) {
-    throw new Error("Rebate share oracle must quote SHARE in bridged USDC");
+  if (!shareTokens.includes(getAddress(await rebates.Share())) || !shareTokens.includes(getAddress(await rebates.DAI()))) {
+    throw new Error("Rebate share oracle must quote SHARE in official DAI");
   }
   if (await shareOracle.getPeriod() > age) throw new Error("Rebate maximum oracle age must cover its update period");
   if (vesting === 0n) throw new Error("Vesting period must be positive");
@@ -39,25 +41,24 @@ export async function main(ctx?: Context) {
     if (!isAddress(asset.token) || getAddress(asset.token) === ZeroAddress) throw new Error("Invalid rebate asset token");
     const oracleAddress = asset.oracle ?? ZeroAddress;
     if (!isAddress(oracleAddress)) throw new Error("Invalid rebate oracle address");
-    const directUSDC = getAddress(asset.token) === getAddress(await rebates.USDC());
+    const directDAI = getAddress(asset.token) === getAddress(await rebates.DAI());
     const added = asset.isAdded ?? true;
     const isLP = asset.isLP ?? false;
-    if (added && isLP) throw new Error("LP rebates are not enabled by this script; use direct USDC deposits");
     if (typeof added !== "boolean" || typeof isLP !== "boolean") throw new Error("Asset flags must be booleans");
     const multiplier = jsonUint(asset.multiplier, "multiplier");
     const pair = asset.pair ? getAddress(asset.pair) : ZeroAddress;
-    if (added && (multiplier === 0n || (!directUSDC && getAddress(oracleAddress) === ZeroAddress))) throw new Error("Enabled non-USDC asset needs multiplier and oracle");
-    if (directUSDC && (isLP || pair !== ZeroAddress || getAddress(oracleAddress) !== ZeroAddress)) throw new Error("Direct USDC does not use an asset oracle or LP pair");
+    if (isLP || pair !== ZeroAddress) throw new Error("LP rebate assets are not supported");
+    if (added && (multiplier === 0n || (!directDAI && getAddress(oracleAddress) === ZeroAddress))) throw new Error("Enabled non-DAI asset needs multiplier and oracle");
+    if (directDAI && getAddress(oracleAddress) !== ZeroAddress) throw new Error("Direct DAI does not use an asset oracle");
     await code(ctx, getAddress(asset.token));
-    if (added && !directUSDC) {
+    if (added && !directDAI) {
       await code(ctx, getAddress(oracleAddress));
       const oracle = new Contract(oracleAddress, ["function token0() view returns(address)", "function token1() view returns(address)", "function getPeriod() view returns(uint256)"], ctx.signer);
       const tokens = [getAddress(await oracle.token0()), getAddress(await oracle.token1())];
-      if (!tokens.includes(getAddress(asset.token)) || !tokens.includes(getAddress(await rebates.USDC()))) throw new Error("Rebate asset oracle must quote bridged USDC");
+      if (!tokens.includes(getAddress(asset.token)) || !tokens.includes(getAddress(await rebates.DAI()))) throw new Error("Rebate asset oracle must quote official DAI");
       if (await oracle.getPeriod() > age) throw new Error("Rebate maximum oracle age must cover the asset oracle period");
     }
-    if (added && isLP) await code(ctx, pair);
-    validated.push({ ...asset, token: getAddress(asset.token), oracle: getAddress(oracleAddress), multiplier, pair, added, isLP });
+    validated.push({ token: getAddress(asset.token), oracle: getAddress(oracleAddress), multiplier, added });
   }
   const share = new Contract(await rebates.Share(), ["function balanceOf(address) view returns(uint256)", "function transfer(address,uint256) returns(bool)"], ctx.signer);
   const balance = await share.balanceOf(await rebates.getAddress());
@@ -67,8 +68,8 @@ export async function main(ctx?: Context) {
   if (await rebates.maxOracleAge() !== age) await send("Set rebate oracle maximum age", () => rebates.setMaxOracleAge(age));
   for (const asset of validated) {
     const current = await rebates.assets(asset.token);
-    if (current.isAdded !== asset.added || current.multiplier !== asset.multiplier || getAddress(current.oracle) !== asset.oracle || current.isLP !== asset.isLP || getAddress(current.pair) !== asset.pair) {
-      await send(`Configure rebate asset ${asset.token}`, () => rebates.setAsset(asset.token, asset.added, asset.multiplier, asset.oracle, asset.isLP, asset.pair));
+    if (current.isAdded !== asset.added || current.multiplier !== asset.multiplier || getAddress(current.oracle) !== asset.oracle) {
+      await send(`Configure rebate asset ${asset.token}`, () => rebates.setAsset(asset.token, asset.added, asset.multiplier, asset.oracle));
     }
   }
   if (target > balance) {

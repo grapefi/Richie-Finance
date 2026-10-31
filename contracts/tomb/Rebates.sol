@@ -22,57 +22,6 @@ interface ITreasury {
     function epoch() external view returns (uint256);
 }
 
-interface IUniswapV2Pair {
-    event Approval(address indexed owner, address indexed spender, uint value);
-    event Transfer(address indexed from, address indexed to, uint value);
-
-    function name() external pure returns (string memory);
-    function symbol() external pure returns (string memory);
-    function decimals() external pure returns (uint8);
-    function totalSupply() external view returns (uint);
-    function balanceOf(address owner) external view returns (uint);
-    function allowance(address owner, address spender) external view returns (uint);
-
-    function approve(address spender, uint value) external returns (bool);
-    function transfer(address to, uint value) external returns (bool);
-    function transferFrom(address from, address to, uint value) external returns (bool);
-
-    function DOMAIN_SEPARATOR() external view returns (bytes32);
-    function PERMIT_TYPEHASH() external pure returns (bytes32);
-    function nonces(address owner) external view returns (uint);
-
-    function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external;
-
-    event Mint(address indexed sender, uint amount0, uint amount1);
-    event Burn(address indexed sender, uint amount0, uint amount1, address indexed to);
-    event Swap(
-        address indexed sender,
-        uint amount0In,
-        uint amount1In,
-        uint amount0Out,
-        uint amount1Out,
-        address indexed to
-    );
-    event Sync(uint112 reserve0, uint112 reserve1);
-
-    function MINIMUM_LIQUIDITY() external pure returns (uint);
-    function factory() external view returns (address);
-    function token0() external view returns (address);
-    function token1() external view returns (address);
-    function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
-    function price0CumulativeLast() external view returns (uint);
-    function price1CumulativeLast() external view returns (uint);
-    function kLast() external view returns (uint);
-
-    function mint(address to) external returns (uint liquidity);
-    function burn(address to) external returns (uint amount0, uint amount1);
-    function swap(uint amount0Out, uint amount1Out, address to, bytes calldata data) external;
-    function skim(address to) external;
-    function sync() external;
-
-    function initialize(address, address) external;
-}
-
 contract RebateTreasury is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -80,8 +29,6 @@ contract RebateTreasury is Ownable, ReentrancyGuard {
         bool isAdded;
         uint256 multiplier;
         address oracle;
-        bool isLP;
-        address pair;
     }
 
     struct VestingSchedule {
@@ -107,11 +54,12 @@ contract RebateTreasury is Ownable, ReentrancyGuard {
     uint256 public lastBuyback;
     uint256 public buybackAmount = 100 * 1e4;
 
-    // Ethereum USDC wrapped by the PulseChain bridge
-    address public constant USDC = 0x15D38573d2feeb82e7ad5187aB8c1D52810B1f07;
+    // Official PulseChain DAI; all rebate prices are quoted in 18-decimal DAI units.
+    address public constant DAI = 0xefD766cCb38EaF1dfd701853BFCe31359239F305;
     address public constant WPLS = 0xA1077a294dDE1B09bB078844df40758a5D0f9a27;
     uint256 public maxOracleAge = 1 days;
     uint256 public constant DENOMINATOR = 1e6;
+    uint256 public constant MAX_DISCOUNT = 500000; // 50% with 1e6 precision
     event Bonded(address indexed account, address indexed token, uint256 amount, uint256 shares);
     event PLSWithdrawn(address indexed recipient, uint256 amount);
 
@@ -147,10 +95,10 @@ contract RebateTreasury is Ownable, ReentrancyGuard {
         Share = IERC20(share);
         ShareOracle = IOracle(shareOracle);
         Treasury = ITreasury(treasury);
-        require(IERC20Metadata(USDC).decimals() == 6, "RebateTreasury: USDC decimals");
+        require(IERC20Metadata(DAI).decimals() == 18, "RebateTreasury: DAI decimals");
         require(IERC20Metadata(share).decimals() == 18, "RebateTreasury: share decimals");
         _validateShareOracle(shareOracle, share);
-        assets[USDC] = Asset(true, DENOMINATOR, address(0), false, address(0));
+        assets[DAI] = Asset(true, DENOMINATOR, address(0));
     }
     
     // Bond asset for discounted Share at bond rate
@@ -234,8 +182,8 @@ contract RebateTreasury is Ownable, ReentrancyGuard {
     function _validateShareOracle(address oracle, address share) internal view {
         address a = IOracle(oracle).token0();
         address b = IOracle(oracle).token1();
-        require((a == share && b == USDC) || (b == share && a == USDC),
-            "RebateTreasury: oracle must be SHARE/USDC");
+        require((a == share && b == DAI) || (b == share && a == DAI),
+            "RebateTreasury: oracle must be SHARE/DAI");
     }
 
     function setMaxOracleAge(uint256 age) external onlyOwner {
@@ -256,45 +204,27 @@ contract RebateTreasury is Ownable, ReentrancyGuard {
         address token,
         bool isAdded,
         uint256 multiplier,
-        address oracle,
-        bool isLP,
-        address pair
+        address oracle
     ) external onlyOwner {
         require(token != address(0), "RebateTreasury: zero token");
         require(token != address(Share), "RebateTreasury: SHARE cannot be an asset");
         if (isAdded) {
+            require(!_isV2Pair(token), "RebateTreasury: LP assets are not supported");
             require(multiplier > 0, "RebateTreasury: zero multiplier");
-            if (token == WPLS) require(!isLP && pair == address(0), "RebateTreasury: direct WPLS only");
-            if (token == USDC) {
-                require(!isLP && pair == address(0) && oracle == address(0),
-                    "RebateTreasury: direct USDC only");
+            _tokenUnit(token);
+            if (token == DAI) {
+                require(oracle == address(0), "RebateTreasury: direct DAI only");
             } else {
                 require(oracle != address(0), "RebateTreasury: zero oracle");
-                if (!isLP) {
-                    address a = IOracle(oracle).token0();
-                    address b = IOracle(oracle).token1();
-                    require((a == token && b == USDC) || (b == token && a == USDC),
-                        "RebateTreasury: asset oracle must quote USDC");
-                }
-            }
-            if (isLP) {
-                require(pair != address(0), "RebateTreasury: zero pair");
-                require(pair == token, "RebateTreasury: LP token mismatch");
-                address a = IUniswapV2Pair(pair).token0();
-                address b = IUniswapV2Pair(pair).token1();
-                require(a == USDC || b == USDC, "RebateTreasury: LP must contain USDC");
-                address underlying = a == USDC ? b : a;
-                address x = IOracle(oracle).token0();
-                address y = IOracle(oracle).token1();
-                require((x == underlying && y == USDC) || (y == underlying && x == USDC),
-                    "RebateTreasury: LP oracle must quote USDC");
+                address a = IOracle(oracle).token0();
+                address b = IOracle(oracle).token1();
+                require((a == token && b == DAI) || (b == token && a == DAI),
+                    "RebateTreasury: asset oracle must quote DAI");
             }
         }
         assets[token].isAdded = isAdded;
         assets[token].multiplier = multiplier;
         assets[token].oracle = oracle;
-        assets[token].isLP = isLP;
-        assets[token].pair = pair;
     }
 
     // Set bond pricing parameters
@@ -303,6 +233,7 @@ contract RebateTreasury is Ownable, ReentrancyGuard {
         uint256 _discount,
         uint256 _vestingPeriod
     ) external onlyOwner {
+        require(_discount <= MAX_DISCOUNT, "RebateTreasury: discount too high");
         require(_vestingPeriod > 0, "RebateTreasury: zero vesting period");
         discount = _discount;
         bondVesting = _vestingPeriod;
@@ -361,21 +292,11 @@ contract RebateTreasury is Ownable, ReentrancyGuard {
         uint256 sharePrice = getSharePrice();
         uint256 tokenPrice = getTokenPrice(token);
         require(sharePrice > 0, "RebateTreasury: zero share price");
-        if (token == USDC) {
-            // amount and sharePrice are both in raw 6-decimal USDC units;
-            // SHARE output is 18 decimals. Value in USDC, not a guaranteed USD peg.
-            uint256 shares = Math.mulDiv(amount, 1e18, sharePrice);
-            shares = Math.mulDiv(shares, discount + DENOMINATOR, DENOMINATOR);
-            return Math.mulDiv(shares, assets[token].multiplier, DENOMINATOR);
-        }
-        if (token == WPLS) {
-            require(tokenPrice > 0, "RebateTreasury: zero PLS price");
-            // PLS/WPLS and SHARE both have 18 decimals; both prices quote raw USDC.
-            uint256 shares = Math.mulDiv(amount, tokenPrice, sharePrice);
-            shares = Math.mulDiv(shares, discount + DENOMINATOR, DENOMINATOR);
-            return Math.mulDiv(shares, assets[token].multiplier, DENOMINATOR);
-        }
-        return amount * tokenPrice * (discount + DENOMINATOR) * assets[token].multiplier / (DENOMINATOR * DENOMINATOR) / sharePrice;
+        require(tokenPrice > 0, "RebateTreasury: zero token price");
+        uint256 quoteValue = Math.mulDiv(amount, tokenPrice, _tokenUnit(token));
+        uint256 shares = Math.mulDiv(quoteValue, 1e18, sharePrice);
+        shares = Math.mulDiv(shares, discount + DENOMINATOR, DENOMINATOR);
+        return Math.mulDiv(shares, assets[token].multiplier, DENOMINATOR);
     }
 
 
@@ -392,32 +313,20 @@ contract RebateTreasury is Ownable, ReentrancyGuard {
 
     function getTokenPrice(address token) public view onlyAsset(token) returns (uint256) {
         Asset memory asset = assets[token];
-        // Quote for 1e18 raw input units (not one whole 6-decimal USDC).
-        if (token == USDC) return 1e18;
+        // DAI quote units returned for exactly one whole input token.
+        if (token == DAI) return 1e18;
         IOracle Oracle = IOracle(asset.oracle);
         uint256 updated = Oracle.blockTimestampLast();
         require(updated <= block.timestamp && block.timestamp - updated <= maxOracleAge,
             "RebateTreasury: stale asset oracle");
-        if (!asset.isLP) {
-            return Oracle.consult(token, 1e18);
-        }
+        return Oracle.consult(token, _tokenUnit(token));
+    }
 
-        IUniswapV2Pair Pair = IUniswapV2Pair(asset.pair);
-        uint256 totalPairSupply = Pair.totalSupply();
-        require(totalPairSupply > 0, "RebateTreasury: empty pair");
-        address token0 = Pair.token0();
-        address token1 = Pair.token1();
-        (uint256 reserve0, uint256 reserve1,) = Pair.getReserves();
-
-        if (token1 == USDC) {
-            uint256 tokenPrice = Oracle.consult(token0, 1e18);
-            return tokenPrice * reserve0 / totalPairSupply +
-                   reserve1 * 1e18 / totalPairSupply;
-        } else {
-            uint256 tokenPrice = Oracle.consult(token1, 1e18);
-            return tokenPrice * reserve1 / totalPairSupply +
-                   reserve0 * 1e18 / totalPairSupply;
-        }
+    function _tokenUnit(address token) internal view returns (uint256) {
+        if (token == DAI || token == WPLS) return 1e18;
+        uint8 tokenDecimals = IERC20Metadata(token).decimals();
+        require(tokenDecimals <= 36, "RebateTreasury: unsupported token decimals");
+        return 10 ** uint256(tokenDecimals);
     }
 
     // Get claimable vested Shares for account
@@ -431,7 +340,31 @@ contract RebateTreasury is Ownable, ReentrancyGuard {
     }
 
     function emergencyWithdraw(IERC20 token, uint256 amnt) external onlyOwner {
+        if (address(token) == address(Share)) {
+            uint256 shareBalance = Share.balanceOf(address(this));
+            require(
+                shareBalance >= totalVested && amnt <= shareBalance - totalVested,
+                "RebateTreasury: Share reserved for vesting"
+            );
+        }
         token.safeTransfer(owner(), amnt);
+    }
+
+    // Reject standard Uniswap V2 / PulseX V2 pair tokens. LP reserve-based
+    // pricing was intentionally removed because spot reserves are manipulable.
+    function _isV2Pair(address token) internal view returns (bool) {
+        (bool token0Ok, bytes memory token0Data) = token.staticcall(
+            abi.encodeWithSignature("token0()")
+        );
+        (bool token1Ok, bytes memory token1Data) = token.staticcall(
+            abi.encodeWithSignature("token1()")
+        );
+        (bool reservesOk, bytes memory reservesData) = token.staticcall(
+            abi.encodeWithSignature("getReserves()")
+        );
+        return token0Ok && token0Data.length >= 32 &&
+            token1Ok && token1Data.length >= 32 &&
+            reservesOk && reservesData.length >= 96;
     }
 
     // Native reserves cannot be recovered with the ERC20 withdrawal function.

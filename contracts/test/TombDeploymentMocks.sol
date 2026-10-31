@@ -2,6 +2,7 @@
 pragma solidity 0.8.20;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 contract TombScriptToken is ERC20 {
     constructor() ERC20("Test token", "TEST") {}
@@ -12,11 +13,15 @@ contract TombScriptUSDC is TombScriptToken {
     function decimals() public pure override returns (uint8) { return 6; }
 }
 
+contract TombScriptToken8 is TombScriptToken {
+    function decimals() public pure override returns (uint8) { return 8; }
+}
+
 contract TombScriptRebateOracle {
     address public token0;
     address public token1;
     uint32 public blockTimestampLast;
-    uint256 public price = 2e6;
+    uint256 public price = 2e18;
     constructor(address share, address quote) {
         token0 = share; token1 = quote; blockTimestampLast = uint32(block.timestamp);
     }
@@ -24,7 +29,7 @@ contract TombScriptRebateOracle {
     function update() external { blockTimestampLast = uint32(block.timestamp); }
     function consult(address token, uint256 amount) external view returns (uint144) {
         require(token == token0);
-        return uint144(amount * price / 1e18);
+        return uint144(amount * price / (10 ** IERC20Metadata(token0).decimals()));
     }
 }
 

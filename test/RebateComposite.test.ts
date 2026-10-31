@@ -5,41 +5,41 @@ import { main as updateSources } from "../scripts/tomb/update-rebate-oracles.js"
 import { main as configureRebates } from "../scripts/tomb/configure-rebates.js";
 import { main as transferAdmin } from "../scripts/tomb/transfer-administration.js";
 const { ethers, networkHelpers } = await network.connect();
-const USDC = "0x15D38573d2feeb82e7ad5187aB8c1D52810B1f07";
+const DAI = "0xefd766ccb38eaf1dfd701853bfce31359239f305";
 const WPLS = "0xA1077a294dDE1B09bB078844df40758a5D0f9a27";
 
 describe("Rebate composite cross-TWAP", () => {
   async function fixture() {
     const [owner, user] = await ethers.getSigners();
-    const template = await ethers.deployContract("TombScriptUSDC");
-    await ethers.provider.send("hardhat_setCode", [USDC, await ethers.provider.getCode(await template.getAddress())]);
-    const usdc = await ethers.getContractAt("TombScriptUSDC", USDC);
+    const template = await ethers.deployContract("TombScriptToken");
+    await ethers.provider.send("hardhat_setCode", [DAI, await ethers.provider.getCode(await template.getAddress())]);
+    const dai = await ethers.getContractAt("TombScriptToken", DAI);
     const share = await ethers.deployContract("TombScriptToken");
-    // 20,000 WPLS/RICH * 0.0001 USDC/WPLS = 2 USDC/RICH.
+    // 20,000 WPLS/RICH * 0.0001 DAI/WPLS = 2 DAI/RICH.
     const shareOracle = await ethers.deployContract("RebateSourceMock", [await share.getAddress(), WPLS, 20000n, 1n]);
-    const plsOracle = await ethers.deployContract("RebateSourceMock", [WPLS, USDC, 100n, 10n ** 18n]);
+    const plsOracle = await ethers.deployContract("RebateSourceMock", [WPLS, DAI, 10n ** 14n, 10n ** 18n]);
     const adapter = await ethers.deployContract("RebateCompositeOracle", [await share.getAddress(), await shareOracle.getAddress(), await plsOracle.getAddress(), 86400]);
     const rebates = await ethers.deployContract("RebateTreasury", [await share.getAddress(), await adapter.getAddress(), owner.address]);
     await share.mint(await rebates.getAddress(), ethers.parseEther("1000"));
-    await usdc.mint(user.address, 100000000n);
-    await usdc.connect(user).approve(await rebates.getAddress(), ethers.MaxUint256);
-    return {owner, user, share, usdc, shareOracle, plsOracle, adapter, rebates};
+    await dai.mint(user.address, ethers.parseEther("100"));
+    await dai.connect(user).approve(await rebates.getAddress(), ethers.MaxUint256);
+    return {owner, user, share, dai, shareOracle, plsOracle, adapter, rebates};
   }
 
   it("quotes both directions in raw units and handles zero/invalid inputs", async () => {
     const {share, adapter} = await networkHelpers.loadFixture(fixture);
-    expect(await adapter.consult(await share.getAddress(), ethers.parseEther("1"))).to.equal(2000000n);
-    expect(await adapter.consult(USDC, 1000000n)).to.equal(ethers.parseEther("0.5"));
-    expect(await adapter.twap(await share.getAddress(), ethers.parseEther("1"))).to.equal(2000000n);
-    expect(await adapter.consult(USDC, 0)).to.equal(0n);
+    expect(await adapter.consult(await share.getAddress(), ethers.parseEther("1"))).to.equal(ethers.parseEther("2"));
+    expect(await adapter.consult(DAI, ethers.parseEther("1"))).to.equal(ethers.parseEther("0.5"));
+    expect(await adapter.twap(await share.getAddress(), ethers.parseEther("1"))).to.equal(ethers.parseEther("2"));
+    expect(await adapter.consult(DAI, 0)).to.equal(0n);
     await expect(adapter.consult(WPLS, 1)).to.be.revertedWith("Composite: invalid token");
   });
 
-  it("integrates USDC and native PLS rebates with the existing treasury", async () => {
+  it("integrates official DAI and native PLS rebates with the existing treasury", async () => {
     const {user, share, plsOracle, rebates} = await networkHelpers.loadFixture(fixture);
-    await rebates.setAsset(WPLS, true, 1000000n, await plsOracle.getAddress(), false, ethers.ZeroAddress);
-    expect(await rebates.getSharePrice()).to.equal(2000000n);
-    await rebates.connect(user).bond(USDC, 100000000n);
+    await rebates.setAsset(WPLS, true, 1000000n, await plsOracle.getAddress());
+    expect(await rebates.getSharePrice()).to.equal(ethers.parseEther("2"));
+    await rebates.connect(user).bond(DAI, ethers.parseEther("100"));
     await rebates.connect(user).bondPLS(ethers.parseEther("0.00535"), {value: ethers.parseEther("100")});
     const total = ethers.parseEther("53.50535");
     expect((await rebates.totalVested()) + await share.balanceOf(user.address)).to.equal(total);
@@ -81,9 +81,9 @@ describe("Rebate composite cross-TWAP", () => {
     const args = [await f.share.getAddress(), await f.shareOracle.getAddress(), await f.plsOracle.getAddress()];
     await expect(ethers.deployContract("RebateCompositeOracle", [...args, 299])).to.be.revertedWith("Composite: invalid age");
     await expect(ethers.deployContract("RebateCompositeOracle", [args[0], args[2], args[1], 86400])).to.be.revertedWith("Composite: wrong pair");
-    const reversed = await ethers.deployContract("RebateSourceMock", [USDC, WPLS, 10n ** 18n, 100n]);
+    const reversed = await ethers.deployContract("RebateSourceMock", [DAI, WPLS, 10000n, 1n]);
     const adapter = await ethers.deployContract("RebateCompositeOracle", [args[0], args[1], await reversed.getAddress(), 86400]);
-    expect(await adapter.consult(args[0], 10n ** 18n)).to.equal(2000000n);
+    expect(await adapter.consult(args[0], 10n ** 18n)).to.equal(ethers.parseEther("2"));
   });
 
   it("updates only due sources and propagates source failures", async () => {
@@ -114,7 +114,7 @@ describe("Rebate composite cross-TWAP", () => {
       await updateSources(ctx); // skips early calls
       await networkHelpers.time.increase(3601);
       await updateSources(ctx);
-      expect(await adapter.consult(await f.share.getAddress(), 10n ** 18n)).to.equal(2000000n);
+      expect(await adapter.consult(await f.share.getAddress(), 10n ** 18n)).to.equal(ethers.parseEther("2"));
     } finally {
       keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
     }
@@ -123,9 +123,9 @@ describe("Rebate composite cross-TWAP", () => {
   it("uses the real unchanged 0.6 Oracle on both liquid pairs", async () => {
     const f = await networkHelpers.loadFixture(fixture);
     const a = await ethers.deployContract("TombScriptPair", [await f.share.getAddress(), WPLS]);
-    const b = await ethers.deployContract("TombScriptPair", [WPLS, USDC]);
+    const b = await ethers.deployContract("TombScriptPair", [WPLS, DAI]);
     await a.setReserves(10n ** 18n, 20000n * 10n ** 18n);
-    await b.setReserves(10n ** 18n, 100n);
+    await b.setReserves(10n ** 18n, 10n ** 14n);
     const now = (await ethers.provider.getBlock("latest"))!.timestamp;
     const first = await ethers.deployContract("contracts/tomb/Oracle.sol:Oracle", [await a.getAddress(), 3600, now]);
     const second = await ethers.deployContract("contracts/tomb/Oracle.sol:Oracle", [await b.getAddress(), 3600, now]);
@@ -134,14 +134,14 @@ describe("Rebate composite cross-TWAP", () => {
     await networkHelpers.time.increase(3601);
     await adapter.connect(f.user).update();
     const quote = await adapter.consult(await f.share.getAddress(), 10n ** 18n);
-    expect(quote).to.be.greaterThanOrEqual(1999999n);
-    expect(quote).to.be.lessThanOrEqual(2000000n);
+    expect(quote).to.be.greaterThanOrEqual(ethers.parseEther("1.999999999999"));
+    expect(quote).to.be.lessThanOrEqual(ethers.parseEther("2"));
     await adapter.update(); // safe no-op immediately after updating
   });
 
   it("configures an existing treasury without losing vesting and skips adapter role transfers", async () => {
     const f = await networkHelpers.loadFixture(fixture);
-    await f.rebates.connect(f.user).bond(USDC, 100000000n);
+    await f.rebates.connect(f.user).bond(DAI, ethers.parseEther("100"));
     const liability = await f.rebates.totalVested();
     const replacement = await ethers.deployContract("RebateCompositeOracle", [await f.share.getAddress(), await f.shareOracle.getAddress(), await f.plsOracle.getAddress(), 86400]);
     const saved = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith("TOMB_")));

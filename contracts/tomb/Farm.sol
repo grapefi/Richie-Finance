@@ -273,7 +273,9 @@ contract ShareRewardPool is ReentrancyGuard {
         if (_amount > 0) {
             user.amount -= _amount;
             pool.totalStaked -= _amount;
+            uint256 beforeBalance = pool.token.balanceOf(address(this));
             pool.token.safeTransfer(sender, _amount);
+            require(beforeBalance - pool.token.balanceOf(address(this)) == _amount, "ShareRewardPool: unsupported token");
         }
 
         user.rewardDebt = (user.amount * pool.accSharePerShare) / 1e18;
@@ -415,6 +417,7 @@ contract ShareRewardPool is ReentrancyGuard {
     }
 
     function emergencyWithdraw(uint256 _pid) public nonReentrant {
+        updatePool(_pid);
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         uint256 amount = user.amount;
@@ -423,7 +426,9 @@ contract ShareRewardPool is ReentrancyGuard {
         user.rewardDebt = 0;
         pendingRewards[_pid][msg.sender] = 0;
         pool.totalStaked -= amount;
+        uint256 beforeBalance = pool.token.balanceOf(address(this));
         pool.token.safeTransfer(msg.sender, amount);
+        require(beforeBalance - pool.token.balanceOf(address(this)) == amount, "ShareRewardPool: unsupported token");
 
         emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
