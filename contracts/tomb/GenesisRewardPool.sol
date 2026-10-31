@@ -9,7 +9,7 @@ contract GenesisRewardPool is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant BPS = 10_000;
-    uint256 public constant MAX_DEPOSIT_FEE_BPS = 1_000; // Max 10% deposit fee
+    uint256 public constant MAX_DEPOSIT_FEE_BPS = 1_00; // Max 1% deposit fee
 
     // Governance.
     address public operator;
@@ -39,9 +39,9 @@ contract GenesisRewardPool is ReentrancyGuard {
     uint256 public poolStartTime;
     uint256 public poolEndTime;
 
-    uint256 public pegPerSecond = 0.02777 ether;
-    uint256 public runningTime = 1 days;
-    uint256 public constant TOTAL_REWARDS = 2400 ether;
+    uint256 public pegPerSecond = 155 ether;
+    uint256 public runningTime = 3 days;
+    uint256 public constant TOTAL_REWARDS = 40176000 ether;
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
@@ -88,6 +88,7 @@ contract GenesisRewardPool is ReentrancyGuard {
         uint16 _depositFeeBps
     ) public onlyOperator {
         require(_depositFeeBps <= MAX_DEPOSIT_FEE_BPS, "deposit fee too high");
+        require(_token != peg, "GenesisPool: PEG cannot be a pool token");
         checkPoolDuplicate(_token);
 
         if (_withUpdate) {
@@ -317,15 +318,11 @@ contract GenesisRewardPool is ReentrancyGuard {
         uint256 amount,
         address to
     ) external onlyOperator {
-        if (block.timestamp < poolEndTime + 90 days) {
-            require(_token != peg, "cannot withdraw peg");
-
-            uint256 length = poolInfo.length;
-            for (uint256 pid = 0; pid < length; ++pid) {
-                require(_token != poolInfo[pid].token, "pool.token");
-            }
+        require(_token != peg, "cannot withdraw peg");
+        uint256 length = poolInfo.length;
+        for (uint256 pid = 0; pid < length; ++pid) {
+            require(_token != poolInfo[pid].token, "pool.token");
         }
-
         _token.safeTransfer(to, amount);
     }
 }

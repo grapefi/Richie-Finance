@@ -5,6 +5,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 contract PegRedeem is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -19,6 +20,11 @@ contract PegRedeem is Ownable, ReentrancyGuard {
     constructor(IERC20 _PEG, IERC20 _PDAI) Ownable(msg.sender) {
         require(address(_PEG) != address(0), "PegRedeem: zero PEG");
         require(address(_PDAI) != address(0), "PegRedeem: zero PDAI");
+        require(address(_PEG) != address(_PDAI), "PegRedeem: identical tokens");
+        require(
+            IERC20Metadata(address(_PEG)).decimals() == IERC20Metadata(address(_PDAI)).decimals(),
+            "PegRedeem: decimals differ"
+        );
         PEG = _PEG;
         PDAI = _PDAI;
     }
@@ -38,8 +44,13 @@ contract PegRedeem is Ownable, ReentrancyGuard {
             "PegRedeem: unsupported PEG token"
         );
 
+        uint256 pdaiReserveBefore = PDAI.balanceOf(address(this));
         uint256 pdaiBalanceBefore = PDAI.balanceOf(msg.sender);
         PDAI.safeTransfer(msg.sender, amount);
+        require(
+            pdaiReserveBefore - PDAI.balanceOf(address(this)) == amount,
+            "PegRedeem: unsupported PDAI sender tax"
+        );
         require(
             PDAI.balanceOf(msg.sender) - pdaiBalanceBefore == amount,
             "PegRedeem: unsupported PDAI token"

@@ -521,6 +521,7 @@ contract ShareRewardPool is ReentrancyGuard {
         address to
     ) external onlyOperator {
         require(to != address(0), "ShareRewardPool: zero recipient");
+        require(_token != share, "cant remove reward token");
         uint256 length = poolInfo.length;
         for (uint256 pid = 0; pid < length; ++pid) {
             require(_token != poolInfo[pid].token, "pool.token");

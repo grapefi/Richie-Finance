@@ -46,11 +46,11 @@ contract Operator is Context, Ownable {
 contract Peg is ERC20Burnable, Operator {
     using SafeERC20 for IERC20;
 
-    uint256 public constant INITIAL_GENESIS_POOL_DISTRIBUTION = 2400 ether;
+    uint256 public constant INITIAL_GENESIS_POOL_DISTRIBUTION = 40176000 ether;
 
     bool public rewardPoolDistributed = false;
 
-    constructor() ERC20("Peg Token", "PEG") {
+    constructor() ERC20("Cash", "CASH") {
         _mint(msg.sender, 1 ether);
     }
 

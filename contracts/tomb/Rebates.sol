@@ -261,6 +261,7 @@ contract RebateTreasury is Ownable, ReentrancyGuard {
         address pair
     ) external onlyOwner {
         require(token != address(0), "RebateTreasury: zero token");
+        require(token != address(Share), "RebateTreasury: SHARE cannot be an asset");
         if (isAdded) {
             require(multiplier > 0, "RebateTreasury: zero multiplier");
             if (token == WPLS) require(!isLP && pair == address(0), "RebateTreasury: direct WPLS only");

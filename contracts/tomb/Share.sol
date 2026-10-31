@@ -46,12 +46,12 @@ contract Operator is Context, Ownable {
 contract Share is ERC20Burnable, Operator {
     using SafeERC20 for IERC20;
 
-    // TOTAL MAX SUPPLY = 50,000
-    uint256 public constant FARMING_POOL_REWARD_ALLOCATION = 41000 ether;
-    uint256 public constant COMMUNITY_FUND_POOL_ALLOCATION = 4500 ether;
-    uint256 public constant DEV_FUND_POOL_ALLOCATION = 4500 ether;
+    // TOTAL MAX SUPPLY = 50,001
+    uint256 public constant FARMING_POOL_REWARD_ALLOCATION = 40000 ether;
+    uint256 public constant COMMUNITY_FUND_POOL_ALLOCATION = 5000 ether;
+    uint256 public constant DEV_FUND_POOL_ALLOCATION = 5000 ether;
 
-    uint256 public constant VESTING_DURATION = 300 days;
+    uint256 public constant VESTING_DURATION = 150 days;
     uint256 public startTime;
     uint256 public endTime;
 
@@ -66,7 +66,7 @@ contract Share is ERC20Burnable, Operator {
 
     bool public rewardPoolDistributed = false;
 
-    constructor(uint256 _startTime, address _communityFund, address _devFund) ERC20("Shares", "SHARE") {
+    constructor(uint256 _startTime, address _communityFund, address _devFund) ERC20("Rich Shares", "RICH") {
         _mint(msg.sender, 1 ether); // mint 1 Share for initial pools deployment
 
         startTime = _startTime;

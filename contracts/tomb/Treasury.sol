@@ -112,8 +112,9 @@ contract Treasury is ContractGuard {
 
     // Exclusions from circulating supply.
     address[] public excludedFromTotalSupply = [
-        address(0x5AC71BAd7DCc7A94EFb4704b21A85B58FaCb5633), //change
-        address(0x2B1B0231ea607B59357c46fB5369A260FA1eAC94)
+        address(0x5AC71BAd7DCc7A94EFb4704b21A85B58FaCb5633), //DAO Multisig
+        address(0x5AC71BAd7DCc7A94EFb4704b21A85B58FaCb5633), //Genesis contract
+        address(0x5AC71BAd7DCc7A94EFb4704b21A85B58FaCb5633) //Redemption contract
     ];
 
     // Core components.
@@ -348,6 +349,7 @@ contract Treasury is ContractGuard {
         uint256 newBootstrapEpochs,
         uint256 newBootstrapExpansionPercent
     ) external onlyOperator {
+        require(block.timestamp < startTime, "Treasury already started");
         require(newBootstrapEpochs <= 120, "_bootstrapEpochs: out of range");
         require(
             newBootstrapExpansionPercent >= 100 &&
